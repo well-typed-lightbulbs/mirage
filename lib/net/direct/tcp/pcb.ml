@@ -64,12 +64,24 @@ module Tx = struct
 
   exception IO_error
 
-  let checksum ~src ~dst pkt =
+  cstruct pseudo_header {
+    uint32_t src;
+    uint32_t dst;
+    uint8_t res;
+    uint8_t proto;
+    uint16_t len
+  } as big_endian 
+
+  let checksum pbuf ~src ~dst pkt =
     let src = ipv4_addr_to_uint32 src in
     let dst = ipv4_addr_to_uint32 dst in
-    let len = (List.fold_left (fun a b -> Bitstring.bitstring_length b + a) 0 pkt) / 8 in
-    let pseudo_header = BITSTRING { src:32; dst:32; 0:8; 6:8; len:16 } in
-    Checksum.ones_complement_list (pseudo_header :: pkt)
+    set_pseudo_header_src pbuf (ipv4_addr_to_uint32 src);
+    set_pseudo_header_dst pbuf (ipv4_addr_to_uint32 dst);
+    set_pseudo_header_res pbuf 0;
+    set_pseudo_header_proto pbuf 6;
+    let plen = Cstruct.len pkt in
+    set_pseudo_header_len pbuf plen;
+    Checksum.ones_complement2 pbuf sizeof_pseudo_header pkt plen
 
   (* Output a general TCP packet, checksum it, and if a reference is provided,
      also record the sent packet for retranmission purposes *)

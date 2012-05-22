@@ -43,7 +43,19 @@ caml_ones_complement_checksum(value v_ba, value v_len)
   CAMLparam2(v_ba, v_len);
   uint32_t sum = 0;
   uint16_t checksum = 0;
-  sum = checksum_bigarray(Caml_ba_data_val(v_ba), Int_val(v_len), sum);
+  sum = checksum_bigarray(Caml_ba_data_val(v_ba), Int_val(v_len), 0);
+  checksum = ~sum;
+  CAMLreturn(Val_int(checksum));
+}
+
+CAMLprim value
+caml_ones_complement_checksum2(value v_ba1, value v_len1, value v_ba2, value v_len2)
+{
+  CAMLparam4(v_ba1, v_len1, v_ba2, v_len2);
+  uint32_t sum = 0;
+  uint16_t checksum = 0;
+  sum = checksum_bigarray(Caml_ba_data_val(v_ba1), Int_val(v_len1), 0);
+  sum = checksum_bigarray(Caml_ba_data_val(v_ba2), Int_val(v_len2), sum);
   checksum = ~sum;
   CAMLreturn(Val_int(checksum));
 }
