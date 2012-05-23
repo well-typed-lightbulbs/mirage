@@ -97,6 +97,7 @@ type peer_uid = int
 
 exception Closed
 
+(*
 module type FLOW = sig
   (* Type of an individual flow *)
   type t
@@ -175,3 +176,4 @@ module type RPC = sig
   val request : mgr -> ?src:src -> dst -> tx req -> rx res Lwt.t
   val respond : mgr -> src -> (dst -> rx req -> tx res Lwt.t) -> unit Lwt.t
 end
+*)
