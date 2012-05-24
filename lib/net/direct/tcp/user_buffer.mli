@@ -1,6 +1,6 @@
 (*
  * Copyright (c) 2010 http://github.com/barko 00336ea19fcb53de187740c490f764f4
- * Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
+ * Copyright (c) 2011-2012 Anil Madhavapeddy <anil@recoil.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,8 +19,8 @@ module Rx : sig
   type t
 
   val create : max_size:int32 -> wnd:Window.t -> t
-  val add_r : t -> Bitstring.t option -> unit Lwt.t
-  val take_l : t -> Bitstring.t option Lwt.t
+  val add_r : t -> OS.Io_page.t option -> unit Lwt.t
+  val take_l : t -> OS.Io_page.t option Lwt.t
   val cur_size : t -> int32
   val max_size : t -> int32
   val monitor: t -> int32 Lwt_mvar.t -> unit
@@ -33,7 +33,7 @@ module Tx : sig
   val available: t -> int32
   val wait_for: t -> int32 -> unit Lwt.t
   val wait_for_flushed: t -> unit Lwt.t
-  val write: t -> Bitstring.t -> unit Lwt.t
-  val write_nodelay: t -> Bitstring.t -> unit Lwt.t
+  val write: t -> OS.Io_page.t -> unit Lwt.t
+  val write_nodelay: t -> OS.Io_page.t -> unit Lwt.t
   val free: t -> int -> unit Lwt.t
 end

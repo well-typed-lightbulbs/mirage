@@ -24,10 +24,10 @@ open Printf
 module Rx = struct
   
   type t = {
-    q: Bitstring.t option Lwt_sequence.t; 
+    q: OS.Io_page.t option Lwt_sequence.t; 
     wnd: Window.t;
     writers: unit Lwt.u Lwt_sequence.t;
-    readers: Bitstring.t option Lwt.u Lwt_sequence.t;
+    readers: OS.Io_page.t option Lwt.u Lwt_sequence.t;
     mutable watcher: int32 Lwt_mvar.t option;
     mutable max_size: int32;
     mutable cur_size: int32;
@@ -51,7 +51,7 @@ module Rx = struct
   let seglen s =
     match s with
     | None -> 0 
-    | Some b -> (Bitstring.bitstring_length b / 8)
+    | Some b -> Cstruct.len b
 
   let add_r t s =
     if t.cur_size > t.max_size then
@@ -112,7 +112,7 @@ module Tx = struct
     wnd: Window.t;
     writers: unit Lwt.u Lwt_sequence.t;
     txq: Segment.Tx.q;
-    buffer: Bitstring.t Lwt_sequence.t;
+    buffer: OS.Io_page.t Lwt_sequence.t;
     max_size: int32;
     mutable bufbytes: int32;
   }
@@ -124,7 +124,7 @@ module Tx = struct
     { wnd; writers; txq; buffer; max_size; bufbytes }
 
   let len data = 
-    Int32.of_int (Bitstring.bitstring_length data / 8)
+    Int32.of_int (Cstruct.len data)
 
   (* Check how many bytes are available to write to output buffer *)
   let available t = 
@@ -168,14 +168,15 @@ module Tx = struct
       match Lwt_sequence.take_opt_l t.buffer with
       | None ->
           (* printf "out at 1\n%!";*)
-	  Bitstring.concat (List.rev curr_data)
+          failwith "clear_buffer concat"
+(* we need a new API here I think	  OS.Io_page.concat (List.rev curr_data) *)
       | Some s ->
           let s_len = len s in
           match s_len > l with
           | true -> 
               (*printf "out at 2 %lu %lu\n%!" s_len l;*)
               let _ = Lwt_sequence.add_l s t.buffer in
-              Bitstring.concat (List.rev curr_data)
+              OS.Io_page.concat (List.rev curr_data)
           | false -> 
 	      t.bufbytes <- Int32.sub t.bufbytes s_len;
               addon_more (s::curr_data) (Int32.sub l s_len)
