@@ -33,11 +33,11 @@ type pcb = {
   rxq: Segment.Rx.q;        (* Received segments queue for out-of-order data *)
   txq: Segment.Tx.q;        (* Transmit segments queue *)
   ack: Ack.Delayed.t;       (* Ack state *)
-  state: State.t;     (* Connection state *)
-  urx: User_buffer.Rx.t;         (* App rx buffer *)
-  urx_close_t: unit Lwt.t;      (* App rx close thread *)
-  urx_close_u: unit Lwt.u;      (* App rx connection close wakener *)
-  utx: User_buffer.Tx.t;         (* App tx buffer *)
+  state: State.t;           (* Connection state *)
+  urx: User_buffer.Rx.t;    (* App rx buffer *)
+  urx_close_t: unit Lwt.t;  (* App rx close thread *)
+  urx_close_u: unit Lwt.u;  (* App rx connection close wakener *)
+  utx: User_buffer.Tx.t;    (* App tx buffer *)
 }
 
 type connection = (pcb * unit Lwt.t) 
@@ -72,9 +72,10 @@ module Tx = struct
     uint16_t len
   } as big_endian 
 
-  let checksum pbuf ~src ~dst pkt =
-    let src = ipv4_addr_to_uint32 src in
-    let dst = ipv4_addr_to_uint32 dst in
+
+  let checksum ~src ~dst =
+    let pbuf = OS.Io_page.get () in
+    fun pkt ->
     set_pseudo_header_src pbuf (ipv4_addr_to_uint32 src);
     set_pseudo_header_dst pbuf (ipv4_addr_to_uint32 dst);
     set_pseudo_header_res pbuf 0;
@@ -82,6 +83,19 @@ module Tx = struct
     let plen = Cstruct.len pkt in
     set_pseudo_header_len pbuf plen;
     Checksum.ones_complement2 pbuf sizeof_pseudo_header pkt plen
+
+  (* Obtain write buffer, and size the data payload view to datalen
+   * if it is specified *)
+  let get_writebuf ?datalen ip id =
+    lwt buf = Ipv4.get_writebuf ~proto:`TCP ~dest_ip:id.dest_ip ip in
+    (* shift buffer by IPv4 header. TODO size by path MTU *)
+    match datalen with
+    |None ->
+      let buf = Cstruct.shift buf Wire.sizeof_tcpv4 in
+      return buf
+    |Some datalen ->
+      let buf = Cstruct.sub buf Wire.sizeof_tcpv4 datalen in
+      return buf
 
   (* Output a general TCP packet, checksum it, and if a reference is provided,
      also record the sent packet for retranmission purposes *)
@@ -97,20 +111,41 @@ module Tx = struct
     (* printf "TCP xmit: dest_ip=%s %s%s%s%sseq=%lu ack=%lu\n%!" (ipv4_addr_to_string dest_ip)
       (if rst then "RST " else "") (if syn then "SYN " else "")
       (if fin then "FIN " else "") (if ack then "ACK " else "") sequence ack_number; *)
-    let options = Options.marshal options in
-    let data_offset = (Bitstring.bitstring_length options + 160) / 32 in
-    let header = BITSTRING {
-      local_port:16; dest_port:16; sequence:32; ack_number:32; 
-      data_offset:4; 0:6; false:1; ack:1; psh:1; rst:1; syn:1; fin:1; window:16; 
-      0:16; 0:16 } in
-    let frame = [header;options;data] in
-    let checksum = checksum ~src:local_ip ~dst:dest_ip frame in
-    let checksum_bs,_,_ = BITSTRING { checksum:16 } in
-    let header_buf,_,_ = header in
-    header_buf.[16] <- checksum_bs.[0];
-    header_buf.[17] <- checksum_bs.[1];
-    Ipv4.output ip ~proto:`TCP ~dest_ip frame >>
-    return ()
+    lwt hdr, data_off =
+      match options with 
+      |[] -> (* Empty options -- fast path *)
+        let data_off = 5 in
+        let _ = Cstruct.shift_left data Wire.sizeof_tcpv4 in
+        Printf.printf "tcp: fast path\n";
+        return (data, data_off)
+      |options -> (* Slow path, need to adjust for options *)
+        lwt xbuf = get_writebuf ip id in
+        let olen = Options.marshal xbuf options in
+        (* blit in data after the options *)
+        Cstruct.blit_buffer data 0 xbuf olen (Cstruct.len data);
+        let data_off = 5 + (olen/4) in (* olen is guaranteed 32-aligned *)
+        let _ = Cstruct.shift_left xbuf Wire.sizeof_tcpv4 in
+        Printf.printf "tcp: slow path, fixing up buffer to %d\n" data_off;
+        return (xbuf, data_off)
+    in
+    Wire.set_tcpv4_src_port hdr local_port;
+    Wire.set_tcpv4_dst_port hdr dest_port;
+    Wire.set_tcpv4_sequence hdr sequence;
+    Wire.set_tcpv4_ack_number hdr ack_number;
+    Wire.set_data_offset hdr data_off;
+    Wire.set_tcpv4_flags hdr 0;
+    (match flags with
+      |Segment.Tx.No_flags -> ()
+      |Segment.Tx.Rst -> Wire.set_rst hdr
+      |Segment.Tx.Syn -> Wire.set_syn hdr
+      |Segment.Tx.Fin -> Wire.set_fin hdr
+      |Segment.Tx.Psh -> Wire.set_psh hdr);
+    Wire.set_tcpv4_window hdr window;
+    Wire.set_tcpv4_checksum hdr 0;
+    Wire.set_tcpv4_urg_ptr hdr 0;
+    let checksum = checksum ~src:local_ip ~dst:dest_ip hdr in
+    Wire.set_tcpv4_checksum hdr checksum;
+    Ipv4.output ip hdr
 
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
   let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
@@ -120,22 +155,20 @@ module Tx = struct
 
   (* Output an RST response when we dont have a PCB *)
   let send_rst t id ~sequence ~ack_number ~syn ~fin ~data =
-    let datalen = Int32.of_int ((Bitstring.bitstring_length data / 8) +
-                  (if syn then 1 else 0) + (if fin then 1 else 0)) in
+    lwt buf = get_writebuf ~datalen:0 t.ip id in 
+    (* XXX XXX what is data for here? -avsm *)
+    let datalen = Int32.add (if syn then 1l else 0l) (if fin then 1l else 0l) in
     let window = 0 in
     let options = [] in
     let seq = Sequence.of_int32 ack_number in
     let rx_ack = Some (Sequence.of_int32 (Int32.add sequence datalen)) in
-    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options ("",0,0) >>
-    return ()
+    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options buf
 
   (* Output a SYN packet *)
   let send_syn t id ~tx_isn ~options ~window = 
-    let seq = tx_isn in
+    lwt buf = get_writebuf ~datalen:0 t.ip id in
     let rx_ack = None in
-    let data = "",0,0 in
-    xmit t.ip id ~flags:Segment.Tx.Syn ~rx_ack ~seq ~window ~options data >>
-    return ()
+    xmit t.ip id ~flags:Segment.Tx.Syn ~rx_ack ~seq:tx_isn ~window ~options buf
 
   (* Queue up an immediate close segment *)
   let close pcb =
@@ -143,9 +176,7 @@ module Tx = struct
     | Established | Close_wait ->
       User_buffer.Tx.wait_for_flushed pcb.utx >>
       let seq = Window.tx_nxt pcb.wnd in
-      tick pcb.state (Send_fin seq);
-      let data = "",0,0 in
-      Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq data
+      Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq None
     |_ -> return ()
      
   (* Thread that transmits ACKs in response to received packets,
@@ -160,10 +191,10 @@ module Tx = struct
       let ack_number = Window.rx_nxt wnd in
       let flags = Segment.Tx.No_flags in
       let options = [] in
-      let data = "",0,0 in
       let seq = Window.tx_nxt wnd in
       Ack.Delayed.transmit ack ack_number >>
-      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq data >>
+      lwt buf = get_writebuf ~datalen:0 t.ip pcb.id in
+      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq buf >>
       send_empty_ack () in
     (* When something transmits an ACK, tell the delayed ACK thread *)
     let rec notify () =
@@ -183,19 +214,17 @@ module Rx = struct
     | false -> return (printf "RX.input: checksum error\n%!")
     | true ->
 	(* URG_TODO: Deal correctly with incomming RST segment *)
-        bitmatch pkt with
-        | { sequence:32:bind(Sequence.of_int32 sequence);
-            ack_number:32:bind(Sequence.of_int32 ack_number); 
-            data_offset:4:bind(data_offset * 32); _:6;
-            urg:1; ack:1; psh:1; rst:1; syn:1; fin:1; window:16; 
-            checksum: 16; urg_ptr: 16; options:data_offset-160:bitstring;
-            data:-1:bitstring } ->
-              let _ = Options.of_packet options in
-              let seg = Segment.Rx.make ~sequence ~fin ~syn ~ack ~ack_number ~window ~data in
-              let {rxq} = pcb in
-              (* Coalesce any outstanding segments and retrieve ready segments *)
-              Segment.Rx.input rxq seg
-        | { _ } -> return (printf "RX.input: unknown\n%!")
+        let sequence = Wire.get_tcpv4_sequence pkt in
+        let ack_number = Wire.get_tcpv4_ack_number pkt in
+        let fin = Wire.get_fin pkt in
+        let syn = Wire.get_syn pkt in
+        let ack = Wire.get_ack pkt in
+        let window = Wire.get_tcpv4_window pkt in
+        let options = Wire.get_options pkt in
+        let seg = Segment.Rx.make ~sequence ~fin ~syn ~ack ~ack_number ~window ~data in
+        let {rxq} = pcb in
+        (* Coalesce any outstanding segments and retrieve ready segments *)
+        Segment.Rx.input rxq seg
    
   (* Thread that spools the data into an application receive buffer,
      and notifies the ACK subsystem that new data is here *)
@@ -353,15 +382,9 @@ let new_client_connection t ~tx_wnd ~sequence ~ack_number ~options ~tx_isn ~rx_w
 let input_no_pcb t pkt id =
   (* TODO: implement verify checksum *)
   match verify_checksum pkt with
-  | false -> return (printf "RX.input: checksum error\n%!")
-  | true ->
-    bitmatch pkt with
-    | { sequence:32; ack_number:32; 
-        data_offset:4:bind(data_offset * 32); _:6;
-        urg:1; ack:1; psh:1; rst:1; syn:1; fin:1; window:16; 
-        checksum: 16; urg_ptr: 16; options:data_offset-160:bitstring;
-        data:-1:bitstring } ->
-      match rst with
+  |false -> return (printf "RX.input: checksum error\n%!")
+  |true ->
+      match Wire.get_rst pkt with
       |true -> begin
         match (hashtbl_find t.connects id) with
         | Some (wakener, _) -> begin
@@ -462,17 +485,15 @@ let input_no_pcb t pkt id =
 
 (* Main input function for TCP packets *)
 let input t ~src ~dst data =
-  bitmatch data with
-  | { source_port:16; dest_port:16; pkt:-1:bitstring } ->
-        let id = { local_port=dest_port; dest_ip=src; local_ip=dst; dest_port=source_port } in
-        (* Lookup connection from the active PCB hash *)
-        with_hashtbl t.channels id
-          (* PCB exists, so continue the connection state machine in tcp_input *)
-           (Rx.input t pkt)
-          (* No existing PCB, so check if it is a SYN for a listening function *)
-           (input_no_pcb t pkt)
-  | { _ } -> 
-        return (printf "TCP: input, unknown header, dropping\n%!")
+  let source_port = Wire.get_tcpv4_src_port data in
+  let dest_port = Wire.get_tcpv4_dst_port data in
+  let id = { local_port=dest_port; dest_ip=src; local_ip=dst; dest_port=source_port } in
+  (* Lookup connection from the active PCB hash *)
+  with_hashtbl t.channels id
+    (* PCB exists, so continue the connection state machine in tcp_input *)
+    (Rx.input t data)
+    (* No existing PCB, so check if it is a SYN for a listening function *)
+    (input_no_pcb t data)
 
 (* Blocking read on a PCB *)
 let rec read pcb =
