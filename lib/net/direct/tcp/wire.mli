@@ -36,8 +36,11 @@ val get_tcpv4_urg_ptr : Cstruct.buf -> Cstruct.uint16
 val set_tcpv4_urg_ptr : Cstruct.buf -> Cstruct.uint16 -> unit
 
 val get_data_offset : Cstruct.buf -> int
+val set_data_offset : Cstruct.buf -> int -> unit
 
 val sizeof_tcpv4 : int
+
+val set_tcpv4_flags : Cstruct.buf -> int -> unit
 
 val get_fin : Cstruct.buf -> bool
 val get_syn : Cstruct.buf -> bool
