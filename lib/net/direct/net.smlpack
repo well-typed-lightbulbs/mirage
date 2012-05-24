@@ -6,7 +6,7 @@ Ipv4
 Icmp
 Udp
 dhcp/Dhcp
-tcp/Tcp
+#tcp/Tcp
 Config
 Manager
 #Flow
