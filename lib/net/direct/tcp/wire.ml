@@ -19,7 +19,8 @@ cstruct tcpv4 {
   uint16_t dst_port;
   uint32_t sequence;
   uint32_t ack_number;
-  uint16_t dataoff_flags;
+  uint8_t  dataoff;
+  uint8_t  flags;
   uint16_t window;
   uint16_t checksum;
   uint16_t urg_ptr
@@ -27,7 +28,11 @@ cstruct tcpv4 {
 
 open Cstruct
 
-let get_data_offset buf = ((get_uint8 buf 12) lsr 4) * 4
+(* XXX note that we overwrite the lower half of dataoff
+ * with 0, so be careful when implemented CWE flag which 
+ * sits there *)
+let get_data_offset buf = ((get_tcpv4_dataoff buf) lsr 4) * 4
+let set_data_offset buf v = set_tcpv4_dataoff buf (v lsl 4)
 
 let get_fin buf = ((get_uint8 buf 13) land (1 lsl 0)) > 0
 let get_syn buf = ((get_uint8 buf 13) land (1 lsl 1)) > 0
