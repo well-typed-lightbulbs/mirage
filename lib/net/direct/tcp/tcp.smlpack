@@ -6,5 +6,5 @@ Tcptimer
 State
 Ack
 Segment
-#Pcb
 User_buffer
+Pcb
