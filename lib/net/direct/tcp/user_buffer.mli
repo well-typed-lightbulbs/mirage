@@ -29,11 +29,8 @@ end
 module Tx : sig
   type t
 
-  val create: max_size:int32 -> wnd:Window.t -> txq:Segment.Tx.q -> t
-  val available: t -> int32
-  val wait_for: t -> int32 -> unit Lwt.t
-  val wait_for_flushed: t -> unit Lwt.t
+  type get_writebuf = unit -> OS.Io_page.t Lwt.t
+  val create: wnd:Window.t -> txq:Segment.Tx.q -> get_writebuf:get_writebuf -> t Lwt.t
   val write: t -> OS.Io_page.t -> unit Lwt.t
-  val write_nodelay: t -> OS.Io_page.t -> unit Lwt.t
   val free: t -> int -> unit Lwt.t
 end
