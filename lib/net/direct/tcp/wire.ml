@@ -58,3 +58,18 @@ let get_options buf =
 
 let set_options buf ts =
   Options.marshal buf ts
+
+open Lwt
+
+(* Obtain write buffer, and size the data payload view to datalen
+* if it is specified *)
+let get_writebuf ?datalen dest_ip ip =
+  lwt buf = Ipv4.get_writebuf ~proto:`TCP ~dest_ip ip in
+  (* shift buffer by IPv4 header. TODO size by path MTU *)
+  match datalen with
+  |None ->
+    let buf = Cstruct.shift buf sizeof_tcpv4 in
+    return buf
+  |Some datalen ->
+    let buf = Cstruct.sub buf sizeof_tcpv4 datalen in
+    return buf
