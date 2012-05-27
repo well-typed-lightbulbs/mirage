@@ -137,7 +137,7 @@ module Tx = struct
        Lwt.on_cancel th (fun () -> Lwt_sequence.remove node);
        th >> write t data
     |false -> 
-       lwt () = Segment.Tx.output ~flags:Segment.Tx.Psh t.txq data in
+       lwt () = Segment.Tx.output ~flags:Segment.Tx.Psh t.txq (Some data) in
        lwt buf = t.get_writebuf () in
        t.buffer <- buf;
        return ()

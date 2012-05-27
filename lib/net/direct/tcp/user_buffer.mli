@@ -31,6 +31,7 @@ module Tx : sig
 
   type get_writebuf = unit -> OS.Io_page.t Lwt.t
   val create: wnd:Window.t -> txq:Segment.Tx.q -> get_writebuf:get_writebuf -> t Lwt.t
+  val get_writebuf : t -> OS.Io_page.t Lwt.t
   val write: t -> OS.Io_page.t -> unit Lwt.t
   val free: t -> int -> unit Lwt.t
 end
