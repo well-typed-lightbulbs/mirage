@@ -47,6 +47,6 @@ module Tx :
       tx_ack:(Sequence.t * int) Lwt_mvar.t ->
       tx_wnd_update:int Lwt_mvar.t -> q * unit Lwt.t
 
-    val output : ?flags:flags -> ?options:Options.ts -> q -> OS.Io_page.t -> unit Lwt.t
+    val output : ?flags:flags -> ?options:Options.ts -> q -> OS.Io_page.t option -> unit Lwt.t
    
   end

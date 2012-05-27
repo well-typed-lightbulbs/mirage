@@ -179,7 +179,7 @@ module Tx = struct
               seq:Sequence.t -> OS.Io_page.t option -> unit Lwt.t
 
   type seg = {
-    data: OS.Io_page.t;
+    data: OS.Io_page.t option;
     flags: flags;
     seq: Sequence.t;
   }
@@ -187,7 +187,7 @@ module Tx = struct
   (* Sequence length of the segment *)
   let len seg =
     (match seg.flags with |No_flags |Psh |Rst -> 0 |Syn |Fin -> 1) +
-    (Cstruct.len seg.data)
+    (match seg.data with |None -> 0 |Some d -> Cstruct.len d)
 
   (* Queue of pre-transmission segments *)
   type q = {
@@ -234,7 +234,7 @@ module Tx = struct
 		  let options = [] in (* TODO: put the right options *)
 		  printf "TCP retransmission on timer seq = %d\n%!"
                     (Sequence.to_int rexmit_seg.seq);
-		  let _ = xmit ~flags ~wnd ~options ~seq (Some rexmit_seg.data) in
+		  let _ = xmit ~flags ~wnd ~options ~seq rexmit_seg.data in
 		  Window.backoff_rto wnd;
 		  (* printf "PUSHING TIMER - new time = %f, new seq = %d\n%!"
                      (Window.rto wnd) (Sequence.to_int rexmit_seg.seq); *)
@@ -260,7 +260,7 @@ module Tx = struct
             let {wnd} = q in
             let flags=rexmit_seg.flags in
             let options=[] in (* TODO: put the right options *)
-            let _ = q.xmit ~flags ~wnd ~options ~seq (Some rexmit_seg.data) in
+            let _ = q.xmit ~flags ~wnd ~options ~seq rexmit_seg.data in
             (* alert window module to fall into fast recovery *)
             Window.alert_fast_rexmit q.wnd seq
           end
@@ -303,7 +303,6 @@ module Tx = struct
     in
     tx_ack_t ()
 
-
   let q ~(xmit:xmit) ~wnd ~state ~rx_ack ~tx_ack ~tx_wnd_update =
     let segs = Lwt_sequence.create () in
     let dup_acks = 0 in
@@ -339,7 +338,7 @@ module Tx = struct
           Tcptimer.start q.rexmit_timer ~p seg.seq
     in
     q_rexmit () >> 
-    lwt view = q.xmit ~flags ~wnd ~options ~seq (Some data) in
+    lwt view = q.xmit ~flags ~wnd ~options ~seq data in
     (* Inform the RX ack thread that we've just sent one *)
     Lwt_mvar.put q.rx_ack ack 
 end
