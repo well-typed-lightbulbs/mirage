@@ -35,14 +35,8 @@ val get_dest: pcb -> (ipv4_addr * int)
 (* Blocking read for a segment *)
 val read: pcb -> OS.Io_page.t option Lwt.t
 
-(* Low-level write interface that lets the application
-   decide on a write strategy *)
-val write_available: pcb -> int
-val write_wait_for: pcb -> int -> unit Lwt.t
 (* Write a segment *)
 val write: pcb -> OS.Io_page.t -> unit Lwt.t
-(* Write a segment without using Nagle's algorithm*)
-val write_nodelay: pcb -> OS.Io_page.t -> unit Lwt.t
 
 val create: Ipv4.t -> t * unit Lwt.t
 val tcpstats: t -> unit

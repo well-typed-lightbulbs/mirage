@@ -84,33 +84,21 @@ module Tx = struct
     set_pseudo_header_len pbuf plen;
     Checksum.ones_complement2 pbuf sizeof_pseudo_header pkt plen
 
-  (* Obtain write buffer, and size the data payload view to datalen
-   * if it is specified *)
-  let get_writebuf ?datalen ip id =
-    lwt buf = Ipv4.get_writebuf ~proto:`TCP ~dest_ip:id.dest_ip ip in
-    (* shift buffer by IPv4 header. TODO size by path MTU *)
-    match datalen with
-    |None ->
-      let buf = Cstruct.shift buf Wire.sizeof_tcpv4 in
-      return buf
-    |Some datalen ->
-      let buf = Cstruct.sub buf Wire.sizeof_tcpv4 datalen in
-      return buf
-
   (* Output a general TCP packet, checksum it, and if a reference is provided,
      also record the sent packet for retranmission purposes *)
   let xmit ip id ~flags ~rx_ack ~seq ~window ~options data =
     let {dest_port; dest_ip; local_port; local_ip} = id in
-    let rst = flags = Segment.Tx.Rst in
-    let syn = flags = Segment.Tx.Syn in
-    let fin = flags = Segment.Tx.Fin in
-    let psh = flags = Segment.Tx.Psh in
-    let ack = match rx_ack with Some _ -> true |None -> false in
     let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
     let sequence = Sequence.to_int32 seq in
     (* printf "TCP xmit: dest_ip=%s %s%s%s%sseq=%lu ack=%lu\n%!" (ipv4_addr_to_string dest_ip)
       (if rst then "RST " else "") (if syn then "SYN " else "")
       (if fin then "FIN " else "") (if ack then "ACK " else "") sequence ack_number; *)
+    (* If transmitted data is blank, we need to get a write buffer *)
+    lwt data =
+      match data with
+      |Some d -> return d
+      |None -> Wire.get_writebuf ~datalen:0 id.dest_ip ip
+    in
     lwt hdr, data_off =
       match options with 
       |[] -> (* Empty options -- fast path *)
@@ -119,7 +107,7 @@ module Tx = struct
         Printf.printf "tcp: fast path\n";
         return (data, data_off)
       |options -> (* Slow path, need to adjust for options *)
-        lwt xbuf = get_writebuf ip id in
+        lwt xbuf = Wire.get_writebuf id.dest_ip ip in
         let olen = Options.marshal xbuf options in
         (* blit in data after the options *)
         Cstruct.blit_buffer data 0 xbuf olen (Cstruct.len data);
@@ -134,6 +122,7 @@ module Tx = struct
     Wire.set_tcpv4_ack_number hdr ack_number;
     Wire.set_data_offset hdr data_off;
     Wire.set_tcpv4_flags hdr 0;
+    (match rx_ack with Some _ -> Wire.set_ack hdr |None -> ());
     (match flags with
       |Segment.Tx.No_flags -> ()
       |Segment.Tx.Rst -> Wire.set_rst hdr
@@ -154,28 +143,27 @@ module Tx = struct
     xmit ip id ~flags ~rx_ack ~seq ~window ~options data
 
   (* Output an RST response when we dont have a PCB *)
-  let send_rst t id ~sequence ~ack_number ~syn ~fin ~data =
-    lwt buf = get_writebuf ~datalen:0 t.ip id in 
+  let send_rst t id ~sequence ~ack_number ~syn ~fin (* ~data *) =
     (* XXX XXX what is data for here? -avsm *)
     let datalen = Int32.add (if syn then 1l else 0l) (if fin then 1l else 0l) in
     let window = 0 in
     let options = [] in
     let seq = Sequence.of_int32 ack_number in
     let rx_ack = Some (Sequence.of_int32 (Int32.add sequence datalen)) in
-    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options buf
+    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options None
 
   (* Output a SYN packet *)
   let send_syn t id ~tx_isn ~options ~window = 
-    lwt buf = get_writebuf ~datalen:0 t.ip id in
     let rx_ack = None in
-    xmit t.ip id ~flags:Segment.Tx.Syn ~rx_ack ~seq:tx_isn ~window ~options buf
+    xmit t.ip id ~flags:Segment.Tx.Syn ~rx_ack ~seq:tx_isn ~window ~options None
 
   (* Queue up an immediate close segment *)
   let close pcb =
     match state pcb.state with
     | Established | Close_wait ->
-      User_buffer.Tx.wait_for_flushed pcb.utx >>
-      let seq = Window.tx_nxt pcb.wnd in
+      (* XXX with get_writebuf, the application must have committed
+       * buffers or lose them before a close. *)
+      (*User_buffer.Tx.wait_for_flushed pcb.utx >> *)
       Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq None
     |_ -> return ()
      
@@ -193,8 +181,7 @@ module Tx = struct
       let options = [] in
       let seq = Window.tx_nxt wnd in
       Ack.Delayed.transmit ack ack_number >>
-      lwt buf = get_writebuf ~datalen:0 t.ip pcb.id in
-      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq buf >>
+      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq None >>
       send_empty_ack () in
     (* When something transmits an ACK, tell the delayed ACK thread *)
     let rec notify () =
@@ -214,13 +201,13 @@ module Rx = struct
     | false -> return (printf "RX.input: checksum error\n%!")
     | true ->
 	(* URG_TODO: Deal correctly with incomming RST segment *)
-        let sequence = Wire.get_tcpv4_sequence pkt in
-        let ack_number = Wire.get_tcpv4_ack_number pkt in
+        let sequence = Sequence.of_int32 (Wire.get_tcpv4_sequence pkt) in
+        let ack_number = Sequence.of_int32 (Wire.get_tcpv4_ack_number pkt) in
         let fin = Wire.get_fin pkt in
         let syn = Wire.get_syn pkt in
         let ack = Wire.get_ack pkt in
         let window = Wire.get_tcpv4_window pkt in
-        let options = Wire.get_options pkt in
+        let data = Wire.get_payload pkt in
         let seg = Segment.Rx.make ~sequence ~fin ~syn ~ack ~ack_number ~window ~data in
         let {rxq} = pcb in
         (* Coalesce any outstanding segments and retrieve ready segments *)
@@ -326,7 +313,9 @@ let new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_
   let state = State.t ~on_close in
   let txq, tx_t = Segment.Tx.q ~xmit:(Tx.xmit_pcb t.ip id) ~wnd ~state ~rx_ack ~tx_ack ~tx_wnd_update in
   (* The user application transmit buffer *)
-  let utx = User_buffer.Tx.create ~max_size:16384l ~wnd ~txq in
+  lwt utx =
+    let get_writebuf () = Wire.get_writebuf id.dest_ip t.ip in
+    User_buffer.Tx.create ~wnd ~txq ~get_writebuf in
   let rxq = Segment.Rx.q ~rx_data ~wnd ~state ~tx_ack in
   (* Set up ACK module *)
   let ack = Ack.Delayed.t ~send_ack ~last:(Sequence.incr rx_isn) in
@@ -339,7 +328,7 @@ let new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_
     (Rx.thread pcb ~rx_data) <?>
     (Wnd.thread ~utx ~urx ~wnd ~tx_wnd_update)
   in
-  pcb, th
+  return (pcb, th)
 
 
 let resolve_wnd_scaling options rx_wnd_scaleoffer = 
@@ -351,32 +340,30 @@ let resolve_wnd_scaling options rx_wnd_scaleoffer =
 
 
 let new_server_connection t ~tx_wnd ~sequence ~options ~tx_isn ~rx_wnd ~rx_wnd_scaleoffer ~pushf id =
-  let options = Options.of_packet options in
   let tx_mss = List.fold_left (fun a -> function Options.MSS m -> Some m |_ -> a) None options in
   let (rx_wnd_scale, tx_wnd_scale), opts = resolve_wnd_scaling options rx_wnd_scaleoffer in
-  let pcb, th = new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_isn id in
+  lwt pcb, th = new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_isn id in
   State.tick pcb.state State.Passive_open;
   State.tick pcb.state (State.Send_synack tx_isn);
   (* Add the PCB to our listens table *)
   Hashtbl.add t.listens id (tx_isn, (pushf, (pcb, th)));
   (* Queue a SYN ACK for transmission *)
   let options = Options.MSS 1460 :: opts in
-  Segment.Tx.output ~flags:Segment.Tx.Syn ~options pcb.txq ("",0,0) >>
+  Segment.Tx.output ~flags:Segment.Tx.Syn ~options pcb.txq None >>
   return (pcb, th)
 
 
 let new_client_connection t ~tx_wnd ~sequence ~ack_number ~options ~tx_isn ~rx_wnd ~rx_wnd_scaleoffer id =
-  let options = Options.of_packet options in
   let tx_mss = List.fold_left (fun a -> function Options.MSS m -> Some m |_ -> a) None options in
   let (rx_wnd_scale, tx_wnd_scale), _ = resolve_wnd_scaling options rx_wnd_scaleoffer in
-  let pcb, th = new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_isn:(Sequence.incr tx_isn) id in
+  lwt pcb, th = new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_isn:(Sequence.incr tx_isn) id in
   (* A hack here because we create the pcb only after the SYN-ACK is rx-ed*)
   State.tick pcb.state (State.Send_syn tx_isn);
   (* Add the PCB to our connection table *)
   Hashtbl.add t.channels id (pcb, th);
   State.tick pcb.state (State.Recv_synack (Sequence.of_int32 ack_number));
   (* xmit ACK *)  
-  Segment.Tx.output pcb.txq ("",0,0) >>
+  Segment.Tx.output pcb.txq None >>
   return (pcb, th)
 
 let input_no_pcb t pkt id =
@@ -406,15 +393,20 @@ let input_no_pcb t pkt id =
             return ()
       end
       |false -> begin
+        let sequence = Wire.get_tcpv4_sequence pkt in
+        let options = Wire.get_options pkt in
+        let ack_number = Wire.get_tcpv4_ack_number pkt in
+        let syn = Wire.get_syn pkt in
+        let fin = Wire.get_fin pkt in
         match syn with
         | true -> begin
-          match ack with
+          match Wire.get_ack pkt with
           | true -> begin
             match (hashtbl_find t.connects id) with
             | Some (wakener, tx_isn) -> begin
               if Sequence.(to_int32 (incr tx_isn)) = ack_number then begin
                 Hashtbl.remove t.connects id;
-		let tx_wnd = window in
+		let tx_wnd = Wire.get_tcpv4_window pkt in
 		let rx_wnd = 65535 in
 		(* TODO: fix hardcoded value - it assumes that this value was sent in the SYN *)
 		let rx_wnd_scaleoffer = 2 in
@@ -431,13 +423,13 @@ let input_no_pcb t pkt id =
             | None -> 
               (* Incomming SYN-ACK with no pending connect
                  and no matching pcb - send RST *)
-              Tx.send_rst t id ~sequence ~ack_number ~syn ~fin ~data
+              Tx.send_rst t id ~sequence ~ack_number ~syn ~fin
           end
           | false -> begin
             match (hashtbl_find t.listeners id.local_port) with
             | Some (_, pushf) -> begin
               let tx_isn = Sequence.of_int ((Random.int 65535) + 0xCAFE0000) in
-	      let tx_wnd = window in
+	      let tx_wnd = Wire.get_tcpv4_window pkt in
 	      (* TODO: make this configurable per listener *)
 	      let rx_wnd = 65535 in
 	      let rx_wnd_scaleoffer = 2 in
@@ -446,12 +438,12 @@ let input_no_pcb t pkt id =
               return ()
             end
             | None -> begin
-              Tx.send_rst t id ~sequence ~ack_number ~syn ~fin ~data
+              Tx.send_rst t id ~sequence ~ack_number ~syn ~fin
             end
           end
         end
         | false -> begin
-          match ack with
+          match Wire.get_ack pkt with
           | true -> begin
             match (hashtbl_find t.listens id) with
             | Some (tx_isn, (pushf, newconn)) -> begin
@@ -474,7 +466,7 @@ let input_no_pcb t pkt id =
                 return ()
               | None ->
                 (* ACK but no matching pcb and no listen - send RST *)
-                Tx.send_rst t id ~sequence ~ack_number ~syn ~fin ~data
+                Tx.send_rst t id ~sequence ~ack_number ~syn ~fin
           end
           | false ->
             (* What the hell is this packet? No SYN,ACK,RST *)
@@ -500,27 +492,11 @@ let rec read pcb =
   lwt d = User_buffer.Rx.take_l pcb.urx in 
   return d
 
-(* Maximum allowed write *)
-let write_available pcb =
-  (* Our effective outgoing MTU is what can fit in a page *)
-  min 4000 (min (Window.tx_mss pcb.wnd)
-	      (Int32.to_int (User_buffer.Tx.available pcb.utx)))
-
-(* URG_TODO: raise exception if not in Established or Close_wait state *)
-(* Wait for more write space *)
-let write_wait_for pcb sz =
-  User_buffer.Tx.wait_for pcb.utx (Int32.of_int sz)
-
 (* URG_TODO: raise exception when trying to write to closed connection
              instead of quietly returning *)
 (* Write a segment *)
 let write pcb data =
   User_buffer.Tx.write pcb.utx data
-
-(* URG_TODO: raise exception when trying to write to closed connection *)
-(* Write a segment without using Nagle's algorithm*)
-let write_nodelay pcb data =
-  User_buffer.Tx.write_nodelay pcb.utx data
 
 (* Close - no more will be written *)
 let close pcb =
