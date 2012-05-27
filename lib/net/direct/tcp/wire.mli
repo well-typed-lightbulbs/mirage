@@ -63,4 +63,6 @@ val set_cwr : Cstruct.buf -> unit
 val get_options : Cstruct.buf -> Options.t list
 val set_options : Cstruct.buf -> Options.ts -> int
 
+val get_payload : Cstruct.buf -> Cstruct.buf
+
 val get_writebuf: ?datalen:int -> Nettypes.ipv4_addr -> Ipv4.t -> OS.Io_page.t Lwt.t

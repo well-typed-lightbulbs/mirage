@@ -59,6 +59,9 @@ let get_options buf =
 let set_options buf ts =
   Options.marshal buf ts
 
+let get_payload buf =
+  Cstruct.shift buf (get_data_offset buf)
+
 open Lwt
 
 (* Obtain write buffer, and size the data payload view to datalen
