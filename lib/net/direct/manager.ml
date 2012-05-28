@@ -31,10 +31,8 @@ type interface = {
   netif: Ethif.t;
   ipv4: Ipv4.t;
   icmp: Icmp.t;
-(*
   udp: Udp.t;
   tcp: Tcp.Pcb.t;
-*)
 }
 
 let get_netif t =
@@ -54,9 +52,7 @@ let configure i =
   function
   |`DHCP ->
     printf "Manager: VIF %s to DHCP\n%!" i.id;
-(*
     lwt t, th = Dhcp.Client.create i.ipv4 i.udp in
-*)
     printf "Manager: DHCP done\n%!";
     return ()
   |`IPv4 (addr, netmask, gateways) ->
@@ -73,18 +69,12 @@ let plug t id vif =
   printf "Manager: plug %s\n%!" id; 
   let wrap (s,t) = try_lwt t >>= return with exn ->
     (printf "Manager: exn=%s %s\n%!" s (Printexc.to_string exn); fail exn) in
-printf "1\n%!";
   let (netif, netif_t) = Ethif.create vif in
-printf "2\n%!";
   let (ipv4, ipv4_t) = Ipv4.create netif in
-printf "3\n%!";
   let (icmp, icmp_t) = Icmp.create ipv4 in
-printf "4\n%!";
-(*
   let (tcp, tcp_t) = Tcp.Pcb.create ipv4 in
   let (udp, udp_t) = Udp.create ipv4 in
-*)
-  let i = { id; ipv4; icmp; netif } in
+  let i = { id; ipv4; icmp; netif; tcp; udp } in
   (* The interface thread can be cancelled by exceptions from the
      rest of the threads, as a debug measure.
      TODO: think about restart strategies here *)
@@ -173,6 +163,7 @@ let create_raw listener =
 let intercept t fn = 
   Ethif.intercept t.netif fn
 
+*)
 (* Find the interfaces associated with the address *)
 let i_of_ip t addr =
   match addr with
@@ -192,7 +183,6 @@ let tcpv4_of_addr t addr =
 (* TODO: do actual route selection *)
 let udpv4_of_addr (t:t) addr =
   List.map (fun x -> x.udp) (i_of_ip t addr)
-*)
 let ipv4_of_interface (t:interface) = 
   t.ipv4
 
