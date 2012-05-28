@@ -47,6 +47,7 @@ open Printf
    when timeouts expire. Thus, the program may only call this function
    once and once only. *)
 let run t =
+  Printexc.record_backtrace true;
   let t = call_hooks enter_hooks <&> t in
   let rec fn () =
     Gc.compact ();
