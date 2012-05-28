@@ -32,7 +32,7 @@ cstruct udpv4 {
 
 let input t ~src ~dst buf =
   let dest_port = get_udpv4_dest_port buf in
-  let data = Cstruct.sub buf sizeof_udpv4 (get_udpv4_length buf) in
+  let data = Cstruct.sub buf sizeof_udpv4 (get_udpv4_length buf - sizeof_udpv4) in
   if Hashtbl.mem t.listeners dest_port then begin
     let fn = Hashtbl.find t.listeners dest_port in
     let source_port = get_udpv4_source_port buf in
