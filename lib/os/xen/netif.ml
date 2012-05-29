@@ -82,6 +82,12 @@ module TX = struct
       uint16_t       size
     } as little_endian
 
+    type flags =
+      |Checksum_blank (* 1 *)
+      |Data_validated (* 2 *)
+      |More_data      (* 4 *)
+      |Extra_info     (* 8 *)
+
     let write ~gref ~offset ~flags ~id ~size slot =
       set_req_gref slot gref;
       set_req_offset slot offset;
