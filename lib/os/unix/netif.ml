@@ -114,7 +114,7 @@ let destroy nf =
   return ()
 
 (* Transmit a packet from an Io_page *)
-let output t page =
+let write t page =
   let off = 0 in
   let len = Io_page.length page in
   lwt len' = Socket.fdbind Activations.write (fun fd -> Socket.write fd page off len) t.dev in

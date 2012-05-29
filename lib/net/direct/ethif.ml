@@ -55,7 +55,7 @@ let get_etherbuf t =
   OS.Netif.get_writebuf t.ethif
 
 let output t buf =
-  OS.Netif.output t.ethif buf
+  OS.Netif.write t.ethif buf
 
 let create ethif =
   let ipv4 = (fun _ -> return ()) in
@@ -63,7 +63,7 @@ let create ethif =
   let arp =
     let get_mac () = mac in
     let get_etherbuf () = OS.Netif.get_writebuf ethif in
-    let output buf = OS.Netif.output ethif buf in
+    let output buf = OS.Netif.write ethif buf in
     Arp.create ~output ~get_mac ~get_etherbuf in
   let t = { ethif; ipv4; mac; arp } in
   let listen = listen t in

@@ -38,7 +38,7 @@ val plug: id -> t Lwt.t
 val unplug: id -> unit
 
 (** Output an Io_page to an interface *)
-val output : t -> Io_page.t -> unit Lwt.t
+val write : t -> Io_page.t -> unit Lwt.t
 
 (** Listen endlesses on a Netfront, and invoke the callback function as frames are
     received. *)

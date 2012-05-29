@@ -224,7 +224,7 @@ let tx_poll nf =
 
 
 (* Transmit a packet from buffer, with offset and length *)  
-let rec output nf page =
+let write nf page =
   (* XXX below for debugging to avoid potential event deadlock. tell avsm if printf shows up *)
   if Gnttab.num_free_grants () < 100 then begin
     Printf.printf "low grants %d\n%!" (Gnttab.num_free_grants ());
