@@ -225,14 +225,15 @@ let tx_poll nf =
 (* Transmit a packet from buffer, with offset and length *)  
 let write nf page =
   lwt gnt = Gnttab.get () in
+  (* This grants access to the *base* data pointer of the page *)
   Gnttab.grant_access ~domid:nf.backend_id ~perm:Gnttab.RO gnt page;
   let gref = Gnttab.to_int32 gnt in
   let id = Int32.to_int gref in
   let size = Io_page.length page in
   let flags = 0 in
-  let offset = 0 in
+  let offset = Cstruct.base_offset page in
   lwt () = Ring.Front.push_request_async nf.tx_fring
-    (TX.Proto_64.write ~id ~gref ~offset~flags ~size) 
+    (TX.Proto_64.write ~id ~gref ~offset ~flags ~size) 
     (fun () ->
       Gnttab.end_access gnt; 
       Gnttab.put gnt)
