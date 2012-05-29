@@ -88,6 +88,8 @@ module TX = struct
       |More_data      (* 4 *)
       |Extra_info     (* 8 *)
 
+    let flag_more_data = 4
+
     let write ~gref ~offset ~flags ~id ~size slot =
       set_req_gref slot gref;
       set_req_offset slot offset;
@@ -222,25 +224,47 @@ let rx_poll nf fn =
 let tx_poll nf =
   Ring.Front.poll nf.tx_fring TX.Proto_64.read
 
-(* Transmit a packet from buffer, with offset and length *)  
-let write nf page =
+(* Push a single page to the ring, but no event notification *)
+let write_request ~flags nf page =
   lwt gnt = Gnttab.get () in
   (* This grants access to the *base* data pointer of the page *)
   Gnttab.grant_access ~domid:nf.backend_id ~perm:Gnttab.RO gnt page;
   let gref = Gnttab.to_int32 gnt in
   let id = Int32.to_int gref in
   let size = Io_page.length page in
-  let flags = 0 in
   let offset = Cstruct.base_offset page in
-  lwt () = Ring.Front.push_request_async nf.tx_fring
+  Ring.Front.push_request_async nf.tx_fring
     (TX.Proto_64.write ~id ~gref ~offset ~flags ~size) 
     (fun () ->
       Gnttab.end_access gnt; 
       Gnttab.put gnt)
-  in
+ 
+(* Transmit a packet from buffer, with offset and length *)  
+let write nf page =
+  lwt () = write_request ~flags:0 nf page in
   if Ring.Front.push_requests_and_check_notify nf.tx_fring then
     Evtchn.notify nf.evtchn;
   return ()
+
+(* Transmit a packet from a list of pages *)
+let writev nf pages =
+  match pages with
+  |[page] ->
+     (* If there is only one page, then just write it normally *)
+     write nf page
+  |pages ->
+     let rec xmit = function
+       |[] -> return ()
+       |[page] -> (* Last page has no More_data flag *)
+          write_request ~flags:0 nf page
+       |page::tl -> (* Page has More_data flag *)
+          lwt () = write_request ~flags:TX.Proto_64.flag_more_data nf page in
+          xmit tl
+     in
+     lwt () = xmit pages in
+     if Ring.Front.push_requests_and_check_notify nf.tx_fring then
+       Evtchn.notify nf.evtchn;
+     return ()
 
 let listen nf fn =
   (* Listen for the activation to poll the interface *)

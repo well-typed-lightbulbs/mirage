@@ -40,6 +40,9 @@ val unplug: id -> unit
 (** Output an Io_page to an interface *)
 val write : t -> Io_page.t -> unit Lwt.t
 
+(** Output a list of Io_pages to an interface as a single packet *)
+val writev : t -> Io_page.t list -> unit Lwt.t
+
 (** Listen endlesses on a Netfront, and invoke the callback function as frames are
     received. *)
 val listen : t -> (Io_page.t -> unit Lwt.t) -> unit Lwt.t
