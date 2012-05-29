@@ -115,14 +115,31 @@ let destroy nf =
 
 (* Transmit a packet from an Io_page *)
 let write t page =
-  let off = 0 in
-  let len = Io_page.length page in
+  let off = Cstruct.base_offset page in
+  let len = Cstruct.len page in
   lwt len' = Socket.fdbind Activations.write (fun fd -> Socket.write fd page off len) t.dev in
   if len' <> len then
     raise_lwt (Failure (sprintf "tap: partial write (%d, expected %d)" len' len))
   else
     return ()
 
+
+(* TODO use writev: but do a copy for now *)
+let writev t pages =
+  match pages with
+  |[] -> return ()
+  |[page] -> write t page
+  |pages ->
+    let page = Io_page.get () in
+    let off = ref 0 in
+    List.iter (fun p ->
+      let len = Cstruct.len p in
+      Cstruct.blit_buffer p 0 page !off len;
+      off := !off + len;
+    ) pages;
+    let v = Cstruct.sub page 0 !off in
+    write t v
+  
 let ethid t = 
   t.id
 
