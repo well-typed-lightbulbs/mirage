@@ -102,7 +102,7 @@ let rec listen t fn =
       try_lwt 
         fn frame
       with exn ->
-        return (printf "EXN: %s\n%!" (Printexc.to_string exn))
+        return (printf "EXN: %s bt: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace()))
     );
     listen t fn
   |false ->
