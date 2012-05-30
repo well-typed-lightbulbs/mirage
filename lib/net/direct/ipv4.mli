@@ -18,7 +18,8 @@ open Nettypes
 
 type t
 val get_writebuf: proto:[< `ICMP | `TCP | `UDP ] -> dest_ip:ipv4_addr -> t -> OS.Io_page.t Lwt.t
-val output: t -> OS.Io_page.t -> unit Lwt.t
+val write: t -> OS.Io_page.t -> unit Lwt.t
+val writev: t -> header:OS.Io_page.t -> OS.Io_page.t list -> unit Lwt.t
 
 val set_ip: t -> ipv4_addr -> unit Lwt.t
 val get_ip: t -> ipv4_addr

@@ -93,11 +93,7 @@ let get_writebuf ~proto ~dest_ip t =
   let payload = Cstruct.shift ipv4_buf sizeof_ipv4 in
   return payload
 
-(* This buffer will be the full frame of headers, as passed by
- * get_writebuf, but truncated from the right to indicate the end
- * of the packet data.
- *)
-let output t buf =
+let adjust_output_header ~tlen buf =
   (* At this point, buf points to the ipv4 payload *)
   let ihl = 5 in (* TODO options *)
   let tlen = (ihl * 4) + (Cstruct.len buf) in
@@ -111,8 +107,26 @@ let output t buf =
   set_ipv4_csum buf checksum;
   (* Final shift to expose the Ethernet headers *)
   let _ = Cstruct.shift_left buf Ethif.sizeof_ethernet in
+  ()
+
+(* This buffer will be the full frame of headers, as passed by
+ * get_writebuf, but truncated from the right to indicate the end
+ * of the packet data.
+ *)
+let write t buf =
+  (* At this point, buf points to the ipv4 payload *)
+  let ihl = 5 in (* TODO options *)
+  let tlen = (ihl * 4) + (Cstruct.len buf) in
+  adjust_output_header ~tlen buf;
   Ethif.write t.ethif buf
 
+let writev t ~header bufs = 
+  (* The header needs to be shifted back *)
+  let ihl = 5 in (* TODO options *)
+  let tlen = List.fold_left (fun a b -> (Cstruct.len b) + a) (ihl * 4) bufs in
+  adjust_output_header ~tlen header;
+  Ethif.writev t.ethif (header::bufs)
+ 
 let input t buf =
   (* buf pointers to to start of IPv4 header here *)
   let ihl = (get_ipv4_hlen_version buf land 0xf) * 4 in
@@ -176,4 +190,3 @@ let set_gateways t gateways =
   return ()
 
 let mac t = Ethif.mac t.ethif
-

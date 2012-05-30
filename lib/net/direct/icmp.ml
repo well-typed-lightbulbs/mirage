@@ -44,7 +44,7 @@ let input t src hdr buf =
     set_icmpv4_ty dbuf 0;
     set_icmpv4_csum dbuf csum;
     let dbuf = Cstruct.sub dbuf 0 (Cstruct.len buf) in
-    Ipv4.output t.ip dbuf
+    Ipv4.write t.ip dbuf
   |ty ->
     printf "ICMP unknown ty %d\n" ty; 
     return ()

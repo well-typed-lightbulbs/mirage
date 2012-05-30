@@ -55,7 +55,7 @@ let output t buf =
   let len = Cstruct.len buf in
   let _ = Cstruct.shift_left buf sizeof_udpv4 in
   set_udpv4_length buf len;
-  Ipv4.output t.ip buf
+  Ipv4.write t.ip buf
 
 let listen t port fn =
   if Hashtbl.mem t.listeners port then

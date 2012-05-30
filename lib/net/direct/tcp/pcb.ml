@@ -90,51 +90,57 @@ module Tx = struct
     let {dest_port; dest_ip; local_port; local_ip} = id in
     let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
     let sequence = Sequence.to_int32 seq in
-    (* printf "TCP xmit: dest_ip=%s %s%s%s%sseq=%lu ack=%lu\n%!" (ipv4_addr_to_string dest_ip)
-      (if rst then "RST " else "") (if syn then "SYN " else "")
-      (if fin then "FIN " else "") (if ack then "ACK " else "") sequence ack_number; *)
-    (* If transmitted data is blank, we need to get a write buffer *)
-    lwt data =
-      match data with
-      |Some d -> return d
-      |None -> Wire.get_writebuf ~datalen:0 id.dest_ip ip
+    (* Adjust a TCP write buffer with the appropriate header fields and checksum *)
+    let adjust_tcp_header ?(options_len=0) hdr =
+      let data_off = (Wire.sizeof_tcpv4 / 4) + (options_len / 4) in
+      Wire.set_tcpv4_src_port hdr local_port;
+      Wire.set_tcpv4_dst_port hdr dest_port;
+      Wire.set_tcpv4_sequence hdr sequence;
+      Wire.set_tcpv4_ack_number hdr ack_number;
+      Wire.set_data_offset hdr data_off;
+      Wire.set_tcpv4_flags hdr 0;
+      (match rx_ack with Some _ -> Wire.set_ack hdr |None -> ());
+      (match flags with
+        |Segment.Tx.No_flags -> ()
+        |Segment.Tx.Rst -> Wire.set_rst hdr
+        |Segment.Tx.Syn -> Wire.set_syn hdr
+        |Segment.Tx.Fin -> Wire.set_fin hdr
+        |Segment.Tx.Psh -> Wire.set_psh hdr);
+      Wire.set_tcpv4_window hdr window;
+      Wire.set_tcpv4_checksum hdr 0;
+      Wire.set_tcpv4_urg_ptr hdr 0;
+      let checksum = checksum ~src:local_ip ~dst:dest_ip hdr in
+      Wire.set_tcpv4_checksum hdr checksum
     in
-    lwt hdr, data_off =
-      match options with 
-      |[] -> (* Empty options -- fast path *)
-        let data_off = 5 in
-        let _ = Cstruct.shift_left data Wire.sizeof_tcpv4 in
-        Printf.printf "tcp: fast path\n";
-        return (data, data_off)
-      |options -> (* Slow path, need to adjust for options *)
-        lwt xbuf = Wire.get_writebuf id.dest_ip ip in
-        let olen = Options.marshal xbuf options in
-        (* blit in data after the options *)
-        Cstruct.blit_buffer data 0 xbuf olen (Cstruct.len data);
-        let data_off = 5 + (olen/4) in (* olen is guaranteed 32-aligned *)
-        let _ = Cstruct.shift_left xbuf Wire.sizeof_tcpv4 in
-        Printf.printf "tcp: slow path, fixing up buffer to %d\n" data_off;
-        return (xbuf, data_off)
-    in
-    Wire.set_tcpv4_src_port hdr local_port;
-    Wire.set_tcpv4_dst_port hdr dest_port;
-    Wire.set_tcpv4_sequence hdr sequence;
-    Wire.set_tcpv4_ack_number hdr ack_number;
-    Wire.set_data_offset hdr data_off;
-    Wire.set_tcpv4_flags hdr 0;
-    (match rx_ack with Some _ -> Wire.set_ack hdr |None -> ());
-    (match flags with
-      |Segment.Tx.No_flags -> ()
-      |Segment.Tx.Rst -> Wire.set_rst hdr
-      |Segment.Tx.Syn -> Wire.set_syn hdr
-      |Segment.Tx.Fin -> Wire.set_fin hdr
-      |Segment.Tx.Psh -> Wire.set_psh hdr);
-    Wire.set_tcpv4_window hdr window;
-    Wire.set_tcpv4_checksum hdr 0;
-    Wire.set_tcpv4_urg_ptr hdr 0;
-    let checksum = checksum ~src:local_ip ~dst:dest_ip hdr in
-    Wire.set_tcpv4_checksum hdr checksum;
-    Ipv4.output ip hdr
+    match data, options with
+    |None, [] -> (* No data, no options, so just obtain a TCP header buf *)
+      printf "TCP.xmit: no data, no option\n%!";
+      lwt hdr = Wire.get_writebuf ~datalen:0 id.dest_ip ip in
+      adjust_tcp_header hdr;
+      Ipv4.write ip hdr
+    |None, options -> (* No data, options, so get TCP buf, marshal options and send *)
+      printf "TCP.xmit: no data, options %s\n%!" (Options.prettyprint options);
+      lwt hdr = Wire.get_writebuf id.dest_ip ip in
+      let options_len = Options.marshal hdr options in 
+      (* Shift the buffer to turn it into an IPv4 view *)
+      let hdr = Cstruct.sub hdr 0 options_len in
+      let _ = Cstruct.shift_left hdr Wire.sizeof_tcpv4 in
+      adjust_tcp_header ~options_len hdr;
+      Ipv4.write ip hdr
+    |Some data, [] ->
+      printf "TCP.xmit: some %d data, no options\n%!" (Cstruct.len data);
+      let _ = Cstruct.shift_left data Wire.sizeof_tcpv4 in
+      adjust_tcp_header data;
+      Ipv4.write ip data
+    |Some data, options ->
+      printf "TCP.xmit: some %d data, options %sA\n%!" (Cstruct.len data) (Options.prettyprint options);
+      (* Obtain a new TCP header and write options into it *)
+      lwt hdr = Wire.get_writebuf ~datalen:0 id.dest_ip ip in
+      let options_len = Options.marshal hdr options in
+      let hdr = Cstruct.sub hdr 0 options_len in
+      let _ = Cstruct.shift_left hdr Wire.sizeof_tcpv4 in
+      adjust_tcp_header ~options_len hdr;
+      Ipv4.writev ip ~header:hdr [data]
 
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
   let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
