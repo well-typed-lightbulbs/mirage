@@ -54,8 +54,11 @@ let rec listen t =
 let get_etherbuf t =
   OS.Netif.get_writebuf t.ethif
 
-let output t buf =
+let write t buf =
   OS.Netif.write t.ethif buf
+
+let writev t bufs =
+  OS.Netif.writev t.ethif bufs
 
 let create ethif =
   let ipv4 = (fun _ -> return ()) in

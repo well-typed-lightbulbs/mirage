@@ -111,7 +111,7 @@ let output t buf =
   set_ipv4_csum buf checksum;
   (* Final shift to expose the Ethernet headers *)
   let _ = Cstruct.shift_left buf Ethif.sizeof_ethernet in
-  Ethif.output t.ethif buf
+  Ethif.write t.ethif buf
 
 let input t buf =
   (* buf pointers to to start of IPv4 header here *)

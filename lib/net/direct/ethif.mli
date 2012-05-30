@@ -21,7 +21,8 @@ type t
 
 val input : t -> OS.Io_page.t -> unit Lwt.t
 val listen : t -> unit Lwt.t
-val output : t -> OS.Io_page.t -> unit Lwt.t
+val write : t -> OS.Io_page.t -> unit Lwt.t
+val writev : t -> OS.Io_page.t list -> unit Lwt.t
 val create : OS.Netif.t -> t * unit Lwt.t
 
 val add_ip : t -> Nettypes.ipv4_addr -> unit Lwt.t
