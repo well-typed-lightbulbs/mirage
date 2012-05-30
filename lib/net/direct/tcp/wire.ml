@@ -134,6 +134,7 @@ let xmit ~ip ~id ?(rst=false) ?(syn=false) ?(fin=false) ?(psh=false) ~rx_ack ~se
   |None, [] -> (* No data, no options, so just obtain a TCP header buf *)
     printf "TCP.xmit: no data, no option\n%!";
     lwt hdr = get_writebuf ~datalen:0 id.dest_ip ip in
+    let _ = Cstruct.shift_left hdr sizeof_tcpv4 in
     adjust_tcp_header hdr;
     Ipv4.write ip hdr
   |None, options -> (* No data, options, so get TCP buf, marshal options and send *)
