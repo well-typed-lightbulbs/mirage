@@ -63,6 +63,8 @@ let get_payload buf =
   Cstruct.shift buf (get_data_offset buf)
 
 open Lwt
+open Nettypes
+open Printf
 
 (* Obtain write buffer, and size the data payload view to datalen
 * if it is specified *)
@@ -76,3 +78,84 @@ let get_writebuf ?datalen dest_ip ip =
   |Some datalen ->
     let buf = Cstruct.sub buf sizeof_tcpv4 datalen in
     return buf
+
+cstruct pseudo_header {
+  uint32_t src;
+  uint32_t dst;
+  uint8_t res;
+  uint8_t proto;
+  uint16_t len
+} as big_endian 
+
+type id = {
+  dest_port: int;               (* Remote TCP port *)
+  dest_ip: ipv4_addr;           (* Remote IP address *)
+  local_port: int;              (* Local TCP port *)
+  local_ip: ipv4_addr;          (* Local IP address *)
+}
+
+let checksum ~src ~dst =
+  let pbuf = OS.Io_page.get () in
+  fun pkt ->
+    set_pseudo_header_src pbuf (ipv4_addr_to_uint32 src);
+    set_pseudo_header_dst pbuf (ipv4_addr_to_uint32 dst);
+    set_pseudo_header_res pbuf 0;
+    set_pseudo_header_proto pbuf 6;
+    let plen = Cstruct.len pkt in
+    set_pseudo_header_len pbuf plen;
+    Checksum.ones_complement2 pbuf sizeof_pseudo_header pkt plen
+
+(* Output a general TCP packet, checksum it, and if a reference is provided,
+   also record the sent packet for retranmission purposes *)
+let xmit ~ip ~id ?(rst=false) ?(syn=false) ?(fin=false) ?(psh=false) ~rx_ack ~seq ~window ~options data =
+  let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
+  let sequence = Sequence.to_int32 seq in
+  (* Adjust a TCP write buffer with the appropriate header fields and checksum *)
+  let adjust_tcp_header ?(options_len=0) hdr =
+    let data_off = (sizeof_tcpv4 / 4) + (options_len / 4) in
+    set_tcpv4_src_port hdr id.local_port;
+    set_tcpv4_dst_port hdr id.dest_port;
+    set_tcpv4_sequence hdr sequence;
+    set_tcpv4_ack_number hdr ack_number;
+    set_data_offset hdr data_off;
+    set_tcpv4_flags hdr 0;
+    if rx_ack <> None then set_ack hdr;
+    if rst then set_rst hdr;
+    if syn then set_syn hdr;
+    if fin then set_fin hdr;
+    if psh then set_psh hdr;
+    set_tcpv4_window hdr window;
+    set_tcpv4_checksum hdr 0;
+    set_tcpv4_urg_ptr hdr 0;
+    let checksum = checksum ~src:id.local_ip ~dst:id.dest_ip hdr in
+    set_tcpv4_checksum hdr checksum
+  in
+  match data, options with
+  |None, [] -> (* No data, no options, so just obtain a TCP header buf *)
+    printf "TCP.xmit: no data, no option\n%!";
+    lwt hdr = get_writebuf ~datalen:0 id.dest_ip ip in
+    adjust_tcp_header hdr;
+    Ipv4.write ip hdr
+  |None, options -> (* No data, options, so get TCP buf, marshal options and send *)
+    printf "TCP.xmit: no data, options %s\n%!" (Options.prettyprint options);
+    lwt hdr = get_writebuf id.dest_ip ip in
+    let options_len = Options.marshal hdr options in 
+    (* Shift the buffer to turn it into an IPv4 view *)
+    let hdr = Cstruct.sub hdr 0 options_len in
+    let _ = Cstruct.shift_left hdr sizeof_tcpv4 in
+    adjust_tcp_header ~options_len hdr;
+    Ipv4.write ip hdr
+  |Some data, [] ->
+    printf "TCP.xmit: some %d data, no options\n%!" (Cstruct.len data);
+    let _ = Cstruct.shift_left data sizeof_tcpv4 in
+    adjust_tcp_header data;
+    Ipv4.write ip data
+  |Some data, options ->
+    printf "TCP.xmit: some %d data, options %sA\n%!" (Cstruct.len data) (Options.prettyprint options);
+    (* Obtain a new TCP header and write options into it *)
+    lwt hdr = get_writebuf ~datalen:0 id.dest_ip ip in
+    let options_len = Options.marshal hdr options in
+    let hdr = Cstruct.sub hdr 0 options_len in
+    let _ = Cstruct.shift_left hdr sizeof_tcpv4 in
+    adjust_tcp_header ~options_len hdr;
+    Ipv4.writev ip ~header:hdr [data]

@@ -19,13 +19,7 @@ open Lwt
 open Nettypes
 open Printf
 open State
-
-type id = {
-  dest_port: int;               (* Remote TCP port *)
-  dest_ip: ipv4_addr;           (* Remote IP address *)
-  local_port: int;              (* Local TCP port *)
-  local_ip: ipv4_addr;          (* Local IP address *)
-}
+open Wire
 
 type pcb = {
   id: id;
@@ -64,104 +58,30 @@ module Tx = struct
 
   exception IO_error
 
-  cstruct pseudo_header {
-    uint32_t src;
-    uint32_t dst;
-    uint8_t res;
-    uint8_t proto;
-    uint16_t len
-  } as big_endian 
-
-
-  let checksum ~src ~dst =
-    let pbuf = OS.Io_page.get () in
-    fun pkt ->
-    set_pseudo_header_src pbuf (ipv4_addr_to_uint32 src);
-    set_pseudo_header_dst pbuf (ipv4_addr_to_uint32 dst);
-    set_pseudo_header_res pbuf 0;
-    set_pseudo_header_proto pbuf 6;
-    let plen = Cstruct.len pkt in
-    set_pseudo_header_len pbuf plen;
-    Checksum.ones_complement2 pbuf sizeof_pseudo_header pkt plen
-
-  (* Output a general TCP packet, checksum it, and if a reference is provided,
-     also record the sent packet for retranmission purposes *)
-  let xmit ip id ~flags ~rx_ack ~seq ~window ~options data =
-    let {dest_port; dest_ip; local_port; local_ip} = id in
-    let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
-    let sequence = Sequence.to_int32 seq in
-    (* Adjust a TCP write buffer with the appropriate header fields and checksum *)
-    let adjust_tcp_header ?(options_len=0) hdr =
-      let data_off = (Wire.sizeof_tcpv4 / 4) + (options_len / 4) in
-      Wire.set_tcpv4_src_port hdr local_port;
-      Wire.set_tcpv4_dst_port hdr dest_port;
-      Wire.set_tcpv4_sequence hdr sequence;
-      Wire.set_tcpv4_ack_number hdr ack_number;
-      Wire.set_data_offset hdr data_off;
-      Wire.set_tcpv4_flags hdr 0;
-      (match rx_ack with Some _ -> Wire.set_ack hdr |None -> ());
-      (match flags with
-        |Segment.Tx.No_flags -> ()
-        |Segment.Tx.Rst -> Wire.set_rst hdr
-        |Segment.Tx.Syn -> Wire.set_syn hdr
-        |Segment.Tx.Fin -> Wire.set_fin hdr
-        |Segment.Tx.Psh -> Wire.set_psh hdr);
-      Wire.set_tcpv4_window hdr window;
-      Wire.set_tcpv4_checksum hdr 0;
-      Wire.set_tcpv4_urg_ptr hdr 0;
-      let checksum = checksum ~src:local_ip ~dst:dest_ip hdr in
-      Wire.set_tcpv4_checksum hdr checksum
-    in
-    match data, options with
-    |None, [] -> (* No data, no options, so just obtain a TCP header buf *)
-      printf "TCP.xmit: no data, no option\n%!";
-      lwt hdr = Wire.get_writebuf ~datalen:0 id.dest_ip ip in
-      adjust_tcp_header hdr;
-      Ipv4.write ip hdr
-    |None, options -> (* No data, options, so get TCP buf, marshal options and send *)
-      printf "TCP.xmit: no data, options %s\n%!" (Options.prettyprint options);
-      lwt hdr = Wire.get_writebuf id.dest_ip ip in
-      let options_len = Options.marshal hdr options in 
-      (* Shift the buffer to turn it into an IPv4 view *)
-      let hdr = Cstruct.sub hdr 0 options_len in
-      let _ = Cstruct.shift_left hdr Wire.sizeof_tcpv4 in
-      adjust_tcp_header ~options_len hdr;
-      Ipv4.write ip hdr
-    |Some data, [] ->
-      printf "TCP.xmit: some %d data, no options\n%!" (Cstruct.len data);
-      let _ = Cstruct.shift_left data Wire.sizeof_tcpv4 in
-      adjust_tcp_header data;
-      Ipv4.write ip data
-    |Some data, options ->
-      printf "TCP.xmit: some %d data, options %sA\n%!" (Cstruct.len data) (Options.prettyprint options);
-      (* Obtain a new TCP header and write options into it *)
-      lwt hdr = Wire.get_writebuf ~datalen:0 id.dest_ip ip in
-      let options_len = Options.marshal hdr options in
-      let hdr = Cstruct.sub hdr 0 options_len in
-      let _ = Cstruct.shift_left hdr Wire.sizeof_tcpv4 in
-      adjust_tcp_header ~options_len hdr;
-      Ipv4.writev ip ~header:hdr [data]
-
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
   let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
     let window = Int32.to_int (Window.rx_wnd_unscaled wnd) in
     let rx_ack = Some (Window.rx_nxt wnd) in
-    xmit ip id ~flags ~rx_ack ~seq ~window ~options data
+    let syn = match flags with Segment.Tx.Syn -> true |_ -> false in
+    let fin = match flags with Segment.Tx.Fin -> true |_ -> false in
+    let rst = match flags with Segment.Tx.Rst -> true |_ -> false in
+    let psh = match flags with Segment.Tx.Psh -> true |_ -> false in
+    xmit ~ip ~id ~syn ~fin ~rst ~psh ~rx_ack ~seq ~window ~options data
 
   (* Output an RST response when we dont have a PCB *)
-  let send_rst t id ~sequence ~ack_number ~syn ~fin (* ~data *) =
+  let send_rst {ip} id ~sequence ~ack_number ~syn ~fin (* ~data *) =
     (* XXX XXX what is data for here? -avsm *)
     let datalen = Int32.add (if syn then 1l else 0l) (if fin then 1l else 0l) in
     let window = 0 in
     let options = [] in
     let seq = Sequence.of_int32 ack_number in
     let rx_ack = Some (Sequence.of_int32 (Int32.add sequence datalen)) in
-    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options None
+    xmit ~ip ~id ~rst:true ~rx_ack ~seq ~window ~options None
 
   (* Output a SYN packet *)
-  let send_syn t id ~tx_isn ~options ~window = 
+  let send_syn {ip} id ~tx_isn ~options ~window = 
     let rx_ack = None in
-    xmit t.ip id ~flags:Segment.Tx.Syn ~rx_ack ~seq:tx_isn ~window ~options None
+    xmit ~ip ~id ~syn:true ~rx_ack ~seq:tx_isn ~window ~options None
 
   (* Queue up an immediate close segment *)
   let close pcb =

@@ -66,3 +66,12 @@ val set_options : Cstruct.buf -> Options.ts -> int
 val get_payload : Cstruct.buf -> Cstruct.buf
 
 val get_writebuf: ?datalen:int -> Nettypes.ipv4_addr -> Ipv4.t -> OS.Io_page.t Lwt.t
+
+type id = {
+  dest_port: int;               (* Remote TCP port *)
+  dest_ip: Nettypes.ipv4_addr;           (* Remote IP address *)
+  local_port: int;              (* Local TCP port *)
+  local_ip: Nettypes.ipv4_addr;          (* Local IP address *)
+}
+
+val xmit : ip:Ipv4.t -> id:id -> ?rst:bool -> ?syn:bool -> ?fin:bool -> ?psh:bool -> rx_ack:Sequence.t option -> seq:Sequence.t -> window:int -> options:Options.ts -> OS.Io_page.t option -> unit Lwt.t
