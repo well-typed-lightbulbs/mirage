@@ -108,8 +108,12 @@ let checksum ~src ~dst =
 (* Output a general TCP packet, checksum it, and if a reference is provided,
    also record the sent packet for retranmission purposes *)
 let xmit ~ip ~id ?(rst=false) ?(syn=false) ?(fin=false) ?(psh=false) ~rx_ack ~seq ~window ~options data =
-  let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
   let sequence = Sequence.to_int32 seq in
+  let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
+  printf "TCP.xmit %s.%d->%s.%d rst %b syn %b fin %b psh %b seq %lu ack %lu %s datalen %d\n%!"
+    (ipv4_addr_to_string id.local_ip) id.local_port (ipv4_addr_to_string id.dest_ip) id.dest_port
+    rst syn fin psh sequence ack_number (Options.prettyprint options) 
+    (match data with |None -> -1 |Some d -> Cstruct.len d);
   (* Adjust a TCP write buffer with the appropriate header fields and checksum *)
   let adjust_tcp_header ?(options_len=0) hdr =
     let data_off = (sizeof_tcpv4 / 4) + (options_len / 4) in
