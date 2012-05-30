@@ -14,56 +14,58 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-val get_tcpv4_src_port : Cstruct.buf -> Cstruct.uint16
-val set_tcpv4_src_port : Cstruct.buf -> Cstruct.uint16 -> unit
+open Cstruct
 
-val get_tcpv4_dst_port : Cstruct.buf -> Cstruct.uint16
-val set_tcpv4_dst_port : Cstruct.buf -> Cstruct.uint16 -> unit
+val get_tcpv4_src_port : buf -> uint16
+val set_tcpv4_src_port : buf -> uint16 -> unit
 
-val get_tcpv4_sequence : Cstruct.buf -> Cstruct.uint32
-val set_tcpv4_sequence : Cstruct.buf -> Cstruct.uint32 -> unit
+val get_tcpv4_dst_port : buf -> uint16
+val set_tcpv4_dst_port : buf -> uint16 -> unit
 
-val get_tcpv4_ack_number : Cstruct.buf -> Cstruct.uint32
-val set_tcpv4_ack_number : Cstruct.buf -> Cstruct.uint32 -> unit
+val get_tcpv4_sequence : buf -> uint32
+val set_tcpv4_sequence : buf -> uint32 -> unit
 
-val get_tcpv4_window : Cstruct.buf -> Cstruct.uint16
-val set_tcpv4_window : Cstruct.buf -> Cstruct.uint16 -> unit
+val get_tcpv4_ack_number : buf -> uint32
+val set_tcpv4_ack_number : buf -> uint32 -> unit
 
-val get_tcpv4_checksum : Cstruct.buf -> Cstruct.uint16
-val set_tcpv4_checksum : Cstruct.buf -> Cstruct.uint16 -> unit
+val get_tcpv4_window : buf -> uint16
+val set_tcpv4_window : buf -> uint16 -> unit
 
-val get_tcpv4_urg_ptr : Cstruct.buf -> Cstruct.uint16
-val set_tcpv4_urg_ptr : Cstruct.buf -> Cstruct.uint16 -> unit
+val get_tcpv4_checksum : buf -> uint16
+val set_tcpv4_checksum : buf -> uint16 -> unit
 
-val get_data_offset : Cstruct.buf -> int
-val set_data_offset : Cstruct.buf -> int -> unit
+val get_tcpv4_urg_ptr : buf -> uint16
+val set_tcpv4_urg_ptr : buf -> uint16 -> unit
+
+val get_data_offset : buf -> int
+val set_data_offset : buf -> int -> unit
 
 val sizeof_tcpv4 : int
 
-val set_tcpv4_flags : Cstruct.buf -> int -> unit
+val set_tcpv4_flags : buf -> int -> unit
 
-val get_fin : Cstruct.buf -> bool
-val get_syn : Cstruct.buf -> bool
-val get_rst : Cstruct.buf -> bool
-val get_psh : Cstruct.buf -> bool
-val get_ack : Cstruct.buf -> bool
-val get_urg : Cstruct.buf -> bool
-val get_ece : Cstruct.buf -> bool
-val get_cwr : Cstruct.buf -> bool
+val get_fin : buf -> bool
+val get_syn : buf -> bool
+val get_rst : buf -> bool
+val get_psh : buf -> bool
+val get_ack : buf -> bool
+val get_urg : buf -> bool
+val get_ece : buf -> bool
+val get_cwr : buf -> bool
 
-val set_fin : Cstruct.buf -> unit
-val set_syn : Cstruct.buf -> unit
-val set_rst : Cstruct.buf -> unit
-val set_psh : Cstruct.buf -> unit
-val set_ack : Cstruct.buf -> unit
-val set_urg : Cstruct.buf -> unit
-val set_ece : Cstruct.buf -> unit
-val set_cwr : Cstruct.buf -> unit
+val set_fin : buf -> unit
+val set_syn : buf -> unit
+val set_rst : buf -> unit
+val set_psh : buf -> unit
+val set_ack : buf -> unit
+val set_urg : buf -> unit
+val set_ece : buf -> unit
+val set_cwr : buf -> unit
 
-val get_options : Cstruct.buf -> Options.t list
-val set_options : Cstruct.buf -> Options.ts -> int
+val get_options : buf -> Options.t list
+val set_options : buf -> Options.ts -> int
 
-val get_payload : Cstruct.buf -> Cstruct.buf
+val get_payload : buf -> buf
 
 val get_writebuf: ?datalen:int -> Nettypes.ipv4_addr -> Ipv4.t -> OS.Io_page.t Lwt.t
 
