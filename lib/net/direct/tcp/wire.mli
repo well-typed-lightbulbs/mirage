@@ -74,4 +74,6 @@ type id = {
   local_ip: Nettypes.ipv4_addr;          (* Local IP address *)
 }
 
-val xmit : ip:Ipv4.t -> id:id -> ?rst:bool -> ?syn:bool -> ?fin:bool -> ?psh:bool -> rx_ack:Sequence.t option -> seq:Sequence.t -> window:int -> options:Options.ts -> OS.Io_page.t option -> unit Lwt.t
+val xmit : ip:Ipv4.t -> id:id -> ?rst:bool -> ?syn:bool -> ?fin:bool -> ?psh:bool ->
+  rx_ack:Sequence.t option -> seq:Sequence.t -> window:int -> options:Options.ts ->
+  OS.Io_page.t option -> unit Lwt.t
