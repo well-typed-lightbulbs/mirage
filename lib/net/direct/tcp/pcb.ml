@@ -56,8 +56,6 @@ let verify_checksum pkt = true
 
 module Tx = struct
 
-  exception IO_error
-
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
   let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
     let window = Int32.to_int (Window.rx_wnd_unscaled wnd) in
@@ -80,8 +78,7 @@ module Tx = struct
 
   (* Output a SYN packet *)
   let send_syn {ip} id ~tx_isn ~options ~window = 
-    let rx_ack = None in
-    xmit ~ip ~id ~syn:true ~rx_ack ~seq:tx_isn ~window ~options None
+    xmit ~ip ~id ~syn:true ~rx_ack:None ~seq:tx_isn ~window ~options None
 
   (* Queue up an immediate close segment *)
   let close pcb =
@@ -115,7 +112,6 @@ module Tx = struct
       Ack.Delayed.transmit ack ack_number >>
       notify () in
     send_empty_ack () <&> (notify ())
-
 end
 
 module Rx = struct
