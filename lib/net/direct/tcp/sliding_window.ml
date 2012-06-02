@@ -25,11 +25,6 @@ type t = {
   mutable l: seq;
   mutable m: seq;
   mutable r: seq;
-  mutable l_dirty: bool;
-  mutable m_dirty: bool;
-  mutable r_dirty: bool;
-  lm_w: seq_waiters;
-  mr_w: seq_waiters;
 }
 
 (* Initialise a new window with initial [isn] and maximum size [mss] *)
@@ -37,12 +32,7 @@ let create ~isn ~mss =
   let l = isn in
   let m = isn in
   let r = Sequence.add isn mss in
-  let l_dirty = false in
-  let m_dirty = false in
-  let r_dirty = false in
-  let lm_w = Lwt_sequence.create () in
-  let mr_w = Lwt_sequence.create () in
-  { l; m; r; l_dirty; m_dirty; r_dirty; lm_w; mr_w }
+  { l; m; r }
 
 (* Test if a sequence number is valid for a window *)
 let valid t seq =
@@ -57,52 +47,32 @@ let get_r t = t.r
 (* TODO enforce l <= m <= r in these additions *)
 let add_l t seq =
   printf "SW.incr_l %s + %s\n" (Sequence.to_string t.l) (Sequence.to_string seq);
-  t.l <- Sequence.add t.l seq;
-  t.l_dirty <- true
+  t.l <- Sequence.add t.l seq
 
 let add_m t seq =
   printf "SW.incr_m %s + %s\n" (Sequence.to_string t.m) (Sequence.to_string seq);
-  t.m <- Sequence.add t.m seq;
-  t.m_dirty <- true
+  t.m <- Sequence.add t.m seq
 
 let add_r t seq =
   printf "SW.incr_r %s + %s\n" (Sequence.to_string t.r) (Sequence.to_string seq);
-  t.r <- Sequence.add t.r seq;
-  t.r_dirty <- true
+  t.r <- Sequence.add t.r seq
 
-let wait_lm t =
-  let th,u = Lwt.task () in
-  let node = Lwt_sequence.add_r u t.lm_w in
-  Lwt.on_cancel th (fun () -> Lwt_sequence.remove node);
-  th
+let set_l t seq =
+  printf "SW.set_l %s = %s\n" (Sequence.to_string t.l) (Sequence.to_string seq);
+  t.l <- seq
 
-let wait_mr t =
-  let th,u = Lwt.task () in
-  let node = Lwt_sequence.add_r u t.mr_w in
-  Lwt.on_cancel th (fun () -> Lwt_sequence.remove node);
-  th
+let set_m t seq =
+  printf "SW.set_m %s = %s\n" (Sequence.to_string t.m) (Sequence.to_string seq);
+  t.m <- seq
 
-let rec wakeup_all w =
-  match Lwt_sequence.take_opt_l w with
-  |None -> ()
-  |Some u -> Lwt.wakeup u (); wakeup_all w
+let set_r t seq =
+  printf "SW.set_r %s = %s\n" (Sequence.to_string t.r) (Sequence.to_string seq);
+  t.r <- seq
 
-(* Wakeup any bound waiters to a variable *)
-let wakeup t =
-  match t.m_dirty with
-  |false -> ()
-  |true ->
-     if t.l_dirty then wakeup_all t.lm_w;
-     if t.r_dirty then wakeup_all t.mr_w
+let get_l_m t = Sequence.sub t.m t.l
+let get_l_r t = Sequence.sub t.r t.l
+let get_m_r t = Sequence.sub t.r t.m
 
-(* Bind a function that is recalculated every time the
- * values of the edges change *)
-let rec bind_lm fn t =
-  let () = fn t.l t.m in
-  lwt () = wait_lm t in
-  bind_lm fn t
-
-let rec bind_mr fn t =
-  let () = fn t.l t.m in
-  lwt () = wait_mr t in
-  bind_mr fn t
+let to_string t =
+  sprintf "[%s %s %s]" (Sequence.to_string t.l) (Sequence.to_string t.m) 
+    (Sequence.to_string t.r)

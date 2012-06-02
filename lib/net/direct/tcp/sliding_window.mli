@@ -17,7 +17,6 @@
 type t
 
 val create : isn:Sequence.t -> mss:Sequence.t -> t
-val valid : t -> Sequence.t -> bool
 
 val get_l : t -> Sequence.t
 val get_m : t -> Sequence.t
@@ -27,7 +26,12 @@ val add_l : t -> Sequence.t -> unit
 val add_m : t -> Sequence.t -> unit
 val add_r : t -> Sequence.t -> unit
 
-val wakeup : t -> unit
+val set_l : t -> Sequence.t -> unit
+val set_m : t -> Sequence.t -> unit
+val set_r : t -> Sequence.t -> unit
 
-val bind_lm : (Sequence.t -> Sequence.t -> unit) -> t -> unit Lwt.t
-val bind_mr : (Sequence.t -> Sequence.t -> unit) -> t -> unit Lwt.t
+val get_l_m : t -> Sequence.t
+val get_l_r : t -> Sequence.t
+val get_m_r : t -> Sequence.t
+
+val to_string : t -> string
