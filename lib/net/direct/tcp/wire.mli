@@ -78,4 +78,4 @@ type id = {
 
 val xmit : ip:Ipv4.t -> id:id -> ?rst:bool -> ?syn:bool -> ?fin:bool -> ?psh:bool ->
   rx_ack:Sequence.t option -> seq:Sequence.t -> window:int -> options:Options.ts ->
-  OS.Io_page.t option -> unit Lwt.t
+  OS.Io_page.t list -> unit Lwt.t
