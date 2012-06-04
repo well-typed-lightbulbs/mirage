@@ -33,11 +33,8 @@ let rec echo pcb th =
    | None -> Tcp.Pcb.close pcb
    | Some v -> begin
        let len = Cstruct.len v in
-       printf "read a pcb %d\n%!" len;
-(*
-       Tcp.Pcb.write_wait_for pcb len
-       >> Tcp.Pcb.write pcb bits
-*)
+       Tcp.Pcb.write_wait_for pcb len >> 
+       Tcp.Pcb.write pcb v >>
        echo pcb th
    end
 
