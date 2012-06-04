@@ -49,13 +49,18 @@ caml_ones_complement_checksum(value v_ba, value v_len)
 }
 
 CAMLprim value
-caml_ones_complement_checksum2(value v_ba1, value v_len1, value v_ba2, value v_len2)
+caml_ones_complement_checksum_list(value v_bal)
 {
-  CAMLparam4(v_ba1, v_len1, v_ba2, v_len2);
+  CAMLparam1(v_bal);
+  CAMLlocal1(v_hd);
   uint32_t sum = 0;
   uint16_t checksum = 0;
-  sum = checksum_bigarray(Caml_ba_data_val(v_ba1), Int_val(v_len1), 0);
-  sum = checksum_bigarray(Caml_ba_data_val(v_ba2), Int_val(v_len2), sum);
+  while (v_bal != Val_emptylist) {
+    v_hd = Field(v_bal, 0);
+    struct caml_ba_array *a = Caml_ba_array_val(v_hd);
+    sum = checksum_bigarray(a->data, a->dim[0], sum);
+    v_bal = Field(v_bal, 1);
+  }
   checksum = ~sum;
   CAMLreturn(Val_int(checksum));
 }

@@ -16,4 +16,4 @@
 
 (** One's complement checksum, RFC1071 *)
 external ones_complement: OS.Io_page.t -> int -> int = "caml_ones_complement_checksum"
-external ones_complement2: OS.Io_page.t -> int -> OS.Io_page.t -> int -> int = "caml_ones_complement_checksum2"
+external ones_complement_list: OS.Io_page.t list -> int = "caml_ones_complement_checksum_list"
