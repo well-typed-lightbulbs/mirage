@@ -67,8 +67,6 @@ val set_options : buf -> Options.ts -> int
 
 val get_payload : buf -> buf
 
-val get_writebuf: ?datalen:int -> Nettypes.ipv4_addr -> Ipv4.t -> OS.Io_page.t Lwt.t
-
 type id = {
   dest_port: int;               (* Remote TCP port *)
   dest_ip: Nettypes.ipv4_addr;           (* Remote IP address *)

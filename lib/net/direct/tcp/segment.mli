@@ -38,7 +38,7 @@ module Tx :
     type flags = |No_flags |Syn |Fin |Rst |Psh
 
     type xmit = flags:flags -> wnd:Window.t -> options:Options.ts ->
-      seq:Sequence.t -> OS.Io_page.t option -> unit Lwt.t
+      seq:Sequence.t -> OS.Io_page.t list -> unit Lwt.t
 
     type q
 
@@ -47,6 +47,6 @@ module Tx :
       tx_ack:(Sequence.t * int) Lwt_mvar.t ->
       tx_wnd_update:int Lwt_mvar.t -> q * unit Lwt.t
 
-    val output : ?flags:flags -> ?options:Options.ts -> q -> OS.Io_page.t option -> unit Lwt.t
+    val output : ?flags:flags -> ?options:Options.ts -> q -> OS.Io_page.t list -> unit Lwt.t
    
   end

@@ -176,10 +176,10 @@ module Tx = struct
    |Psh
 
   type xmit = flags:flags -> wnd:Window.t -> options:Options.ts ->
-              seq:Sequence.t -> OS.Io_page.t option -> unit Lwt.t
+              seq:Sequence.t -> OS.Io_page.t list -> unit Lwt.t
 
   type seg = {
-    data: OS.Io_page.t option;
+    data: OS.Io_page.t list;
     flags: flags;
     seq: Sequence.t;
   }
@@ -187,7 +187,7 @@ module Tx = struct
   (* Sequence length of the segment *)
   let len seg =
     (match seg.flags with |No_flags |Psh |Rst -> 0 |Syn |Fin -> 1) +
-    (match seg.data with |None -> 0 |Some d -> Cstruct.len d)
+    (Cstruct.lenv seg.data)
 
   (* Queue of pre-transmission segments *)
   type q = {
