@@ -84,9 +84,7 @@ module Tx = struct
   let close pcb =
     match state pcb.state with
     | Established | Close_wait ->
-      (* XXX with get_writebuf, the application must have committed
-       * buffers or lose them before a close. *)
-      (*User_buffer.Tx.wait_for_flushed pcb.utx >> *)
+      User_buffer.Tx.wait_for_flushed pcb.utx >>
       Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq []
     |_ -> return ()
      
@@ -411,6 +409,17 @@ let input t ~src ~dst data =
 let rec read pcb =
   lwt d = User_buffer.Rx.take_l pcb.urx in 
   return d
+
+(* Maximum allowed write *)
+let write_available pcb =
+  (* Our effective outgoing MTU is what can fit in a page *)
+  min 4000 (min (Window.tx_mss pcb.wnd)
+              (Int32.to_int (User_buffer.Tx.available pcb.utx)))
+
+(* URG_TODO: raise exception if not in Established or Close_wait state *)
+(* Wait for more write space *)
+let write_wait_for pcb sz =
+  User_buffer.Tx.wait_for pcb.utx (Int32.of_int sz)
 
 (* URG_TODO: raise exception when trying to write to closed connection
              instead of quietly returning *)

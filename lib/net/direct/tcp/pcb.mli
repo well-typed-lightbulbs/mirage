@@ -36,6 +36,9 @@ val get_dest: pcb -> (ipv4_addr * int)
 val read: pcb -> OS.Io_page.t option Lwt.t
 
 (* Write a segment *)
+val write_available : pcb -> int
+val write_wait_for : pcb -> int -> unit Lwt.t
+
 val write: pcb -> OS.Io_page.t -> unit Lwt.t
 val writev: pcb -> OS.Io_page.t list -> unit Lwt.t
 
