@@ -225,14 +225,15 @@ let tx_poll nf =
   Ring.Front.poll nf.tx_fring TX.Proto_64.read
 
 (* Push a single page to the ring, but no event notification *)
-let write_request ~flags nf page =
+let write_request ?size ~flags nf page =
   lwt gnt = Gnttab.get () in
   (* This grants access to the *base* data pointer of the page *)
   Gnttab.grant_access ~domid:nf.backend_id ~perm:Gnttab.RO gnt page;
   let gref = Gnttab.to_int32 gnt in
   let id = Int32.to_int gref in
-  let size = Io_page.length page in
+  let size = match size with |None -> Io_page.length page |Some s -> s in
   let offset = Cstruct.base_offset page in
+  printf "write_req id %d gref %ld off %d flags %d size %d\n%!" id gref offset flags size;
   Ring.Front.push_request_async nf.tx_fring
     (TX.Proto_64.write ~id ~gref ~offset ~flags ~size) 
     (fun () ->
@@ -249,19 +250,25 @@ let write nf page =
 (* Transmit a packet from a list of pages *)
 let writev nf pages =
   match pages with
+  |[] -> return ()
   |[page] ->
      (* If there is only one page, then just write it normally *)
      write nf page
-  |pages ->
-     let rec xmit = function
+  |first_page::other_pages ->
+     (* For Xen Netfront, the first fragment contains the entire packet
+      * length, which is the backend will use to consume the remaining
+      * fragments until the full length is satisfied *)
+     lwt () = write_request ~flags:TX.Proto_64.flag_more_data ~size:(Cstruct.lenv pages) nf first_page in
+     let rec xmit = 
+       function
        |[] -> return ()
-       |[page] -> (* Last page has no More_data flag *)
+       |[page] -> (* The last fragment has no More_data flag to indicate eof *)
           write_request ~flags:0 nf page
-       |page::tl -> (* Page has More_data flag *)
+       |page::tl -> (* A middle fragment has a More_data flag set *)
           lwt () = write_request ~flags:TX.Proto_64.flag_more_data nf page in
           xmit tl
      in
-     lwt () = xmit pages in
+     lwt () = xmit other_pages in
      if Ring.Front.push_requests_and_check_notify nf.tx_fring then
        Evtchn.notify nf.evtchn;
      return ()
