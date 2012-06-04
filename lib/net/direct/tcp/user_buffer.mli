@@ -1,6 +1,6 @@
 (*
  * Copyright (c) 2010 http://github.com/barko 00336ea19fcb53de187740c490f764f4
- * Copyright (c) 2011-2012 Anil Madhavapeddy <anil@recoil.org>
+ * Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,9 +29,11 @@ end
 module Tx : sig
   type t
 
-  type get_writebuf = unit -> OS.Io_page.t Lwt.t
-  val create: wnd:Window.t -> txq:Segment.Tx.q -> get_writebuf:get_writebuf -> t Lwt.t
-  val get_writebuf : t -> OS.Io_page.t Lwt.t
-  val write: t -> OS.Io_page.t -> unit Lwt.t
+  val create: max_size:int32 -> wnd:Window.t -> txq:Segment.Tx.q -> t
+  val available: t -> int32
+  val wait_for: t -> int32 -> unit Lwt.t
+  val wait_for_flushed: t -> unit Lwt.t
+  val write: t -> OS.Io_page.t list -> unit Lwt.t
+  val write_nodelay: t -> OS.Io_page.t list -> unit Lwt.t
   val free: t -> int -> unit Lwt.t
 end
