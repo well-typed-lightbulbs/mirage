@@ -1,5 +1,5 @@
 (*
- * Copyright (c) 2010-2011 Anil Madhavapeddy <anil@recoil.org>
+ * Copyright (c) 2010-2012 Anil Madhavapeddy <anil@recoil.org>
  * Copyright (c) 2012 Balraj Singh <bs375@cl.cam.ac.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -57,14 +57,14 @@ let verify_checksum pkt = true
 module Tx = struct
 
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
-  let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
+  let xmit_pcb ip id ~flags ~wnd ~options ~seq datav =
     let window = Int32.to_int (Window.rx_wnd_unscaled wnd) in
     let rx_ack = Some (Window.rx_nxt wnd) in
     let syn = match flags with Segment.Tx.Syn -> true |_ -> false in
     let fin = match flags with Segment.Tx.Fin -> true |_ -> false in
     let rst = match flags with Segment.Tx.Rst -> true |_ -> false in
     let psh = match flags with Segment.Tx.Psh -> true |_ -> false in
-    xmit ~ip ~id ~syn ~fin ~rst ~psh ~rx_ack ~seq ~window ~options data
+    xmit ~ip ~id ~syn ~fin ~rst ~psh ~rx_ack ~seq ~window ~options datav
 
   (* Output an RST response when we dont have a PCB *)
   let send_rst {ip} id ~sequence ~ack_number ~syn ~fin (* ~data *) =
@@ -74,11 +74,11 @@ module Tx = struct
     let options = [] in
     let seq = Sequence.of_int32 ack_number in
     let rx_ack = Some (Sequence.of_int32 (Int32.add sequence datalen)) in
-    xmit ~ip ~id ~rst:true ~rx_ack ~seq ~window ~options None
+    xmit ~ip ~id ~rst:true ~rx_ack ~seq ~window ~options []
 
   (* Output a SYN packet *)
   let send_syn {ip} id ~tx_isn ~options ~window = 
-    xmit ~ip ~id ~syn:true ~rx_ack:None ~seq:tx_isn ~window ~options None
+    xmit ~ip ~id ~syn:true ~rx_ack:None ~seq:tx_isn ~window ~options []
 
   (* Queue up an immediate close segment *)
   let close pcb =
@@ -87,7 +87,7 @@ module Tx = struct
       (* XXX with get_writebuf, the application must have committed
        * buffers or lose them before a close. *)
       (*User_buffer.Tx.wait_for_flushed pcb.utx >> *)
-      Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq None
+      Segment.Tx.output ~flags:Segment.Tx.Fin pcb.txq []
     |_ -> return ()
      
   (* Thread that transmits ACKs in response to received packets,
@@ -104,7 +104,7 @@ module Tx = struct
       let options = [] in
       let seq = Window.tx_nxt wnd in
       Ack.Delayed.transmit ack ack_number >>
-      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq None >>
+      xmit_pcb t.ip pcb.id ~flags ~wnd ~options ~seq [] >>
       send_empty_ack () in
     (* When something transmits an ACK, tell the delayed ACK thread *)
     let rec notify () =
@@ -235,9 +235,7 @@ let new_pcb t ~rx_wnd ~rx_wnd_scale ~tx_wnd ~tx_wnd_scale ~sequence ~tx_mss ~tx_
   let state = State.t ~on_close in
   let txq, tx_t = Segment.Tx.q ~xmit:(Tx.xmit_pcb t.ip id) ~wnd ~state ~rx_ack ~tx_ack ~tx_wnd_update in
   (* The user application transmit buffer *)
-  lwt utx =
-    let get_writebuf () = Wire.get_writebuf id.dest_ip t.ip in
-    User_buffer.Tx.create ~wnd ~txq ~get_writebuf in
+  let utx = User_buffer.Tx.create ~wnd ~txq ~max_size:16384l in
   let rxq = Segment.Rx.q ~rx_data ~wnd ~state ~tx_ack in
   (* Set up ACK module *)
   let ack = Ack.Delayed.t ~send_ack ~last:(Sequence.incr rx_isn) in
@@ -271,7 +269,7 @@ let new_server_connection t ~tx_wnd ~sequence ~options ~tx_isn ~rx_wnd ~rx_wnd_s
   Hashtbl.add t.listens id (tx_isn, (pushf, (pcb, th)));
   (* Queue a SYN ACK for transmission *)
   let options = Options.MSS 1460 :: opts in
-  Segment.Tx.output ~flags:Segment.Tx.Syn ~options pcb.txq None >>
+  lwt () = Segment.Tx.output ~flags:Segment.Tx.Syn ~options pcb.txq [] in
   return (pcb, th)
 
 
@@ -285,7 +283,7 @@ let new_client_connection t ~tx_wnd ~sequence ~ack_number ~options ~tx_isn ~rx_w
   Hashtbl.add t.channels id (pcb, th);
   State.tick pcb.state (State.Recv_synack (Sequence.of_int32 ack_number));
   (* xmit ACK *)  
-  Segment.Tx.output pcb.txq None >>
+  lwt () = Segment.Tx.output pcb.txq [] in
   return (pcb, th)
 
 let input_no_pcb t pkt id =
@@ -417,8 +415,8 @@ let rec read pcb =
 (* URG_TODO: raise exception when trying to write to closed connection
              instead of quietly returning *)
 (* Write a segment *)
-let write pcb data =
-  User_buffer.Tx.write pcb.utx data
+let writev pcb data = User_buffer.Tx.write pcb.utx data
+let write pcb data = User_buffer.Tx.write pcb.utx [data]
 
 (* Close - no more will be written *)
 let close pcb =
