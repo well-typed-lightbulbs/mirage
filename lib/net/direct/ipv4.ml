@@ -94,9 +94,6 @@ let get_writebuf ~proto ~dest_ip t =
   return payload
 
 let adjust_output_header ~tlen buf =
-  (* At this point, buf points to the ipv4 payload *)
-  let ihl = 5 in (* TODO options *)
-  let tlen = (ihl * 4) + (Cstruct.len buf) in
   (* Shift the packet to expose the ipv4 header *)
   let _ = Cstruct.shift_left buf sizeof_ipv4 in
   (* Set the mutable values in the ipv4 header *)
@@ -123,7 +120,7 @@ let write t buf =
 let writev t ~header bufs = 
   (* The header needs to be shifted back *)
   let ihl = 5 in (* TODO options *)
-  let tlen = List.fold_left (fun a b -> (Cstruct.len b) + a) (ihl * 4) bufs in
+  let tlen = (ihl * 4) + (Cstruct.len header) + (Cstruct.lenv bufs) in
   adjust_output_header ~tlen header;
   Ethif.writev t.ethif (header::bufs)
  
