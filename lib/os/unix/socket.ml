@@ -75,11 +75,10 @@ external fd_to_int : 'a fd -> int = "%identity"
 (** Given an activation function actfn (to know when the FD is ready),
     perform an iofn repeatedly until either error or value is obtained *)
 let rec fdbind actfn iofn fd =
-  actfn (fd_to_int fd) >>
   match iofn fd with
   |OK x -> return x
   |Err err -> fail (Error err)
-  |Retry -> fdbind actfn iofn fd
+  |Retry -> actfn (fd_to_int fd) >> fdbind actfn iofn fd
 
 (** Same as fdbind, except on functions that do not need an Activation (e.g. disk fds) *)
 let rec iobind iofn arg =
