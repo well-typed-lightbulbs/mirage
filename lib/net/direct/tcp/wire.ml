@@ -120,10 +120,12 @@ let xmit ~ip ~id ?(rst=false) ?(syn=false) ?(fin=false) ?(psh=false) ~rx_ack ~se
   let header = Cstruct.sub hdr 0 (sizeof_tcpv4 + options_len) in
   let checksum = checksum ~src:id.local_ip ~dst:id.dest_ip (header::datav) in
   set_tcpv4_checksum header checksum;
+  (*
   printf "TCP.xmit %s.%d->%s.%d rst %b syn %b fin %b psh %b seq %lu ack %lu %s datalen %d datafrag %d dataoff %d olen %d\n%!"
     (ipv4_addr_to_string id.local_ip) id.local_port (ipv4_addr_to_string id.dest_ip) id.dest_port
     rst syn fin psh sequence ack_number (Options.prettyprint options) 
     (Cstruct.lenv datav) (List.length datav) data_off options_len;
+  *)
   match datav with
   |[] -> Ipv4.write ip header
   |_ -> Ipv4.writev ip ~header datav
