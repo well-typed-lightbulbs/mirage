@@ -89,7 +89,7 @@ let output_broadcast t ~xid ~yiaddr ~siaddr ~options =
   Cstruct.set_buffer options 0 buf sizeof_dhcp options_len;
   let buf = Cstruct.sub buf 0 (sizeof_dhcp+options_len) in
   Printf.printf "Sending DHCP broadcast\n%!";
-  Udp.output t.udp buf
+  Udp.output_writebuf t.udp buf
 
 (* Receive a DHCP UDP packet *)
 let input t ~src ~dst ~source_port buf =

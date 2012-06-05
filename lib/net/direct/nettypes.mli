@@ -48,7 +48,6 @@ type peer_uid = int
 
 exception Closed
 
-(*
 module type FLOW = sig
   type t
   type mgr
@@ -56,9 +55,9 @@ module type FLOW = sig
   type src
   type dst
 
-  val read : t -> Bitstring.t option Lwt.t
-  val write : t -> Bitstring.t -> unit Lwt.t
-  val writev : t -> Bitstring.t list -> Bitstring.t Lwt.t
+  val read : t -> OS.Io_page.t option Lwt.t
+  val write : t -> OS.Io_page.t -> unit Lwt.t
+  val writev : t -> OS.Io_page.t list -> unit Lwt.t
   val close : t -> unit Lwt.t
 
   val listen : mgr -> src -> (dst -> t -> unit Lwt.t) -> unit Lwt.t
@@ -85,14 +84,14 @@ module type CHANNEL = sig
   type dst
 
   val read_char: t -> char Lwt.t
-  val read_until: t -> char -> (bool * Bitstring.t) Lwt.t
-  val read_some: ?len:int -> t -> Bitstring.t Lwt.t
-  val read_stream: ?len: int -> t -> Bitstring.t Lwt_stream.t
-  val read_crlf: t -> Bitstring.t Lwt.t
+  val read_until: t -> char -> (bool * OS.Io_page.t) Lwt.t
+  val read_some: ?len:int -> t -> OS.Io_page.t Lwt.t
+  val read_stream: ?len: int -> t -> OS.Io_page.t Lwt_stream.t
+  val read_crlf: t -> OS.Io_page.t Lwt.t
 
   val write_char : t -> char -> unit Lwt.t
   val write_string : t -> string -> unit Lwt.t
-  val write_bitstring : t -> Bitstring.t -> unit Lwt.t
+  val write_bitstring : t -> OS.Io_page.t -> unit Lwt.t
   val write_line : t -> string -> unit Lwt.t
 
   val flush : t -> unit Lwt.t
@@ -118,4 +117,3 @@ module type RPC = sig
   val request : mgr -> ?src:src -> dst -> tx req -> rx res Lwt.t
   val respond : mgr -> src -> (dst -> rx req -> tx res Lwt.t) -> unit Lwt.t
 end
-*)

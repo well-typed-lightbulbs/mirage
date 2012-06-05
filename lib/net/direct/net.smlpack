@@ -9,6 +9,6 @@ dhcp/Dhcp
 tcp/Tcp
 Config
 Manager
-#Flow
-#Datagram
+Flow
+Datagram
 #Channel
