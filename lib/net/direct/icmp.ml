@@ -39,12 +39,11 @@ let input t src hdr buf =
       let orig_csum = get_icmpv4_csum buf in
       let shift = if orig_csum > 0xffff -0x0800 then 0x0801 else 0x0800 in
       (orig_csum + shift) land 0xffff in
-    lwt dbuf = Ipv4.get_writebuf ~proto:`ICMP ~dest_ip:src t.ip in
-    Cstruct.blit_buffer buf 0 dbuf 0 (Cstruct.len buf);
-    set_icmpv4_ty dbuf 0;
-    set_icmpv4_csum dbuf csum;
-    let dbuf = Cstruct.sub dbuf 0 (Cstruct.len buf) in
-    Ipv4.write t.ip dbuf
+    lwt header = Ipv4.get_writebuf ~proto:`ICMP ~dest_ip:src t.ip in
+    set_icmpv4_ty buf 0;
+    set_icmpv4_csum buf csum;
+    let header = Cstruct.sub header 0 0 in
+    Ipv4.writev t.ip ~header [buf]
   |ty ->
     printf "ICMP unknown ty %d\n" ty; 
     return ()
