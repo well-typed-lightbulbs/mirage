@@ -51,11 +51,22 @@ let get_writebuf ~dest_ip ~source_port ~dest_port t =
   let data = Cstruct.shift buf sizeof_udpv4 in
   return data
 
-let output t buf =
+let output_writebuf t buf =
   let len = Cstruct.len buf in
   let _ = Cstruct.shift_left buf sizeof_udpv4 in
   set_udpv4_length buf len;
   Ipv4.write t.ip buf
+
+let writev ~dest_ip ~source_port ~dest_port t bufs =
+  lwt hdr = Ipv4.get_writebuf ~proto:`UDP ~dest_ip t.ip in
+  let hdr = Cstruct.sub hdr 0 sizeof_udpv4 in
+  set_udpv4_source_port hdr source_port;
+  set_udpv4_dest_port hdr dest_port;
+  set_udpv4_checksum hdr 0;
+  Ipv4.writev t.ip ~header:hdr bufs
+
+let write ~dest_ip ~source_port ~dest_port t buf =
+  writev ~dest_ip ~source_port ~dest_port t [buf]
 
 let listen t port fn =
   if Hashtbl.mem t.listeners port then
