@@ -233,7 +233,6 @@ let write_request ?size ~flags nf page =
   let id = Int32.to_int gref in
   let size = match size with |None -> Io_page.length page |Some s -> s in
   let offset = Cstruct.base_offset page in
-  printf "write_req id %d gref %ld off %d flags %d size %d\n%!" id gref offset flags size;
   Ring.Front.push_request_async nf.tx_fring
     (TX.Proto_64.write ~id ~gref ~offset ~flags ~size) 
     (fun () ->
