@@ -145,12 +145,12 @@ module type CHANNEL = sig
   val read_until: t -> char -> (bool * OS.Io_page.t) Lwt.t
   val read_some: ?len:int -> t -> OS.Io_page.t Lwt.t
   val read_stream: ?len:int -> t -> OS.Io_page.t Lwt_stream.t
-  val read_crlf: t -> OS.Io_page.t Lwt.t
+  val read_line: t -> OS.Io_page.t list Lwt.t
 
-  val write_char : t -> char -> unit Lwt.t
-  val write_string : t -> string -> unit Lwt.t
-  val write_bitstring : t -> OS.Io_page.t -> unit Lwt.t
-  val write_line : t -> string -> unit Lwt.t
+  val write_char : t -> char -> unit
+  val write_string : t -> string -> int -> int -> unit
+  val write_buffer : t -> OS.Io_page.t -> unit
+  val write_line : t -> string -> unit
 
   val flush : t -> unit Lwt.t
   val close : t -> unit Lwt.t
