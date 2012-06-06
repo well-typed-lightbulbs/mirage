@@ -28,6 +28,10 @@ let debug =
   let e = getenv "MIR-DEBUG" ~default:"0" in
   match e with "0" -> false | _ -> true
 
+let trace =
+  let e = getenv "MIR-TRACE" ~default:"0" in
+  match e with "0" -> false | _ -> true
+
 let profiling = false
 (* In case you have problems with natdynlink, set this to false *)
 let native_p4 = true
@@ -283,13 +287,18 @@ let _ = dispatch begin function
     let p4_build = "../../../syntax/_build" in
     let camlp4_bc =
       S[A"-pp"; 
-        A (ps "camlp4o -I %s str.cma pa_mirage.cma -cow-no-open %s" 
-             p4_build (if debug then "-lwt-debug" else ""))] 
+        A (ps "camlp4o -I %s str.cma pa_mirage.cma -cow-no-open %s %s" 
+             p4_build (if debug then "-lwt-debug" else "")
+             (if trace then "pa_trace.cma" else "")
+          )
+       ] 
     in
     let camlp4_nc = 
       S[A"-pp";
-        A (ps "camlp4o.opt -I %s str.cmxs pa_mirage.cmxs -cow-no-open %s"
-             p4_build (if debug then "-lwt-debug" else ""))] 
+        A (ps "camlp4o.opt -I %s str.cmxs pa_mirage.cmxs -cow-no-open %s %s"
+             p4_build (if debug then "-lwt-debug" else "")
+             (if trace then "pa_trace.cmxs" else "")
+          )] 
     in
     let camlp4_cmd = if native_p4 then camlp4_nc else camlp4_bc in
     flag ["ocaml"; "compile" ; "pa_mirage"] & camlp4_cmd;
