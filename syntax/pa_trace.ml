@@ -30,6 +30,7 @@
 open Camlp4.PreCast
 
 let filter_std = true
+let output_fn = "print_endline"
 
 type col = Blue | Green | Cyan | Red
 let code_of_col = function |Blue -> 34 |Green -> 32 |Cyan -> 36 |Red -> 31
@@ -51,7 +52,7 @@ let add_debug_expr name e =
   let _loc = Ast.loc_of_expr e in
   match color_log _loc name with
   |None -> <:expr< $e$ >>
-  |Some m -> <:expr< prerr_endline $str:m$; $e$ >>
+  |Some m -> <:expr< $lid:output_fn$ $str:m$; $e$ >>
 
 let rec map_match_case name = function
   | <:match_case@_loc< $m1$ | $m2$ >> ->
