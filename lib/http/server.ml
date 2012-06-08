@@ -130,7 +130,7 @@ let daemon_callback spec =
           Net.Channel.flush channel (* TODO: autoflush *) 
         ) streams
       with exn -> begin
-        printf "daemon_callback: exn %d: %s\n%!" conn_id (Printexc.to_string exn);
+        printf "daemon_callback: exn %d: %s %s\n%!" conn_id (Printexc.to_string exn) (Printexc.get_backtrace ());
         return ()
       end
     in
