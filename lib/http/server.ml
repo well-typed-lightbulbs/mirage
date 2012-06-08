@@ -139,8 +139,7 @@ let daemon_callback spec =
         let finished_t, finished_u = Lwt.wait () in
         let stream_t =
           try_lwt
-            let read_line () = Net.Channel.read_crlf channel >|=
-              Bitstring.string_of_bitstring in
+            let read_line () = Net.Channel.read_line channel >|= Cstruct.copy_buffers in
             lwt req = Request.init_request finished_u read_line in
             let close = match Request.header req ~name:"connection" with
               | ["close"] -> true
