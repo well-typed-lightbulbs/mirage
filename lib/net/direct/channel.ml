@@ -138,11 +138,6 @@ module Make(Flow:FLOW) :
     
   (* Output functions *)
 
-  let rec flush t =
-    let l = List.rev t.obufq in
-    t.obufq <- [];
-    Flow.writev t.flow l
-
   let alloc_obuf t =
     let buf = OS.Io_page.get () in
     t.obuf <- Some buf;
@@ -201,6 +196,12 @@ module Make(Flow:FLOW) :
     write_string t buf 0 (String.length buf);
     write_char t '\n'
 
+  let rec flush t =
+    queue_obuf t;
+    let l = List.rev t.obufq in
+    t.obufq <- [];
+    Flow.writev t.flow l
+ 
   let close t =
     flush t >>
     Flow.close t.flow
