@@ -191,10 +191,18 @@ module Tx = struct
       let s = Lwt_sequence.take_l t.buffer in
       let s_len = len s in
       match s_len > avail_len with
-      | true -> 
-          (* not enough opened up - return pkt to buffer *)
-          let _ = Lwt_sequence.add_l s t.buffer in
-          None
+      | true ->  begin
+          match avail_len with
+          |0l -> (* return pkt to buffer *)
+            let _ = Lwt_sequence.add_l s t.buffer in
+            None
+          |_ -> (* split buffer into a partial write *)
+            let to_send,remaining = Cstruct.split s (Int32.to_int avail_len) in
+            (* queue remaining view *)
+            let _ = Lwt_sequence.add_l remaining t.buffer in
+            t.bufbytes <- Int32.sub t.bufbytes avail_len;
+            Some [to_send]
+      end
       | false -> 
           match s_len < avail_len with
           | true -> 
@@ -212,6 +220,28 @@ module Tx = struct
         | Some pkt -> 
             Segment.Tx.output ~flags:Segment.Tx.Psh t.txq pkt >>
             clear_buffer t
+
+  (* Chunk up the segments into MSS max for transmission *)
+  let transmit_segments ~mss ~txq datav =
+    let transmit acc = Segment.Tx.(output ~flags:Psh txq (List.rev acc)) in
+    let rec chunk datav acc =
+      match datav with
+      |[] -> begin
+        match acc with
+        |[] -> return ()
+        |_ -> transmit acc
+      end 
+      |hd::tl ->
+        let curlen = Cstruct.lenv acc in
+        let tlen = Cstruct.len hd + curlen in
+        if tlen > mss then begin
+          let a,b = Cstruct.split hd (mss - curlen) in
+          lwt () = transmit (a::acc) in
+          chunk (b::tl) []
+        end else
+          chunk tl (hd::acc)
+    in
+    chunk datav []
 
   let write t datav =
     let l = lenv datav in
@@ -233,8 +263,9 @@ module Tx = struct
             List.iter (fun data -> ignore(Lwt_sequence.add_r data t.buffer)) datav;
             return ()
 	| false -> 
-            Segment.Tx.output ~flags:Segment.Tx.Psh t.txq datav
-
+            let max_size = Window.tx_mss t.wnd in
+            transmit_segments ~mss:max_size ~txq:t.txq datav
+            
   let write_nodelay t datav =
     let l = lenv datav in
     match Lwt_sequence.is_empty t.buffer with
@@ -250,7 +281,8 @@ module Tx = struct
             List.iter (fun data -> ignore(Lwt_sequence.add_r data t.buffer)) datav;
             return ()
 	| false -> 
-            Segment.Tx.output ~flags:Segment.Tx.Psh t.txq datav
+            let max_size = Window.tx_mss t.wnd in
+            transmit_segments ~mss:max_size ~txq:t.txq datav
 
 
   let inform_app t = 
