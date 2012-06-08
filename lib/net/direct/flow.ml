@@ -56,7 +56,7 @@ module TCPv4 = struct
 	  return ()
       end
       | Some (fl, th) -> begin
-        let _ = fn (Tcp.Pcb.get_dest fl) fl <?> th in
+        let _ = fn (Tcp.Pcb.get_dest fl) fl  in
         accept (st, l) 
       end
     in
