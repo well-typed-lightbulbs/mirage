@@ -56,11 +56,11 @@ net
 #block
 #dns
 http
-#utf8
-#utf16
-#ulexing
-#dyntype
-#cow
+utf8
+utf16
+ulexing
+dyntype
+cow
 #openflow
-#oUnit
+oUnit
 #fs
