@@ -526,7 +526,7 @@ let listen t port =
   Hashtbl.replace t.listeners port (st, pushfn);
   (st, {t; port})
 
-
+(*
 let print_onestat ~src ~sp ~dst ~dp ~st sent rxed =
   printf "%s\t%s\t%s\t%s\t%10d\t%10d\t%s\n%!" src sp dst dp sent rxed st
 
@@ -657,7 +657,7 @@ let startTcpStatsServer t ~port =
   let st, l = listen t port in
   Lwt_stream.iter_s (fun f -> statsprint t f) st
 
-
+*)
 (* Construct the main TCP thread *)
 let create ip =
   let thread, _ = Lwt.task () in
@@ -671,7 +671,9 @@ let create ip =
     printf "TCP: shutting down\n%!";
     Ipv4.detach ip `TCP;
   );
+ (*
   let statsport = 81 in
-  let _ = startTcpStatsServer t statsport in
+  let _ = startTcpStatsServer t statsport in 
+  *)
   (t, thread)
 
