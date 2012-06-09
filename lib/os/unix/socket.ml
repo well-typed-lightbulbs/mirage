@@ -37,8 +37,8 @@ external tcpv4_accept: [`tcpv4] fd -> ([`tcpv4] fd * ipv4 * port) resp = "caml_t
 
 external udpv4_socket: unit -> [`udpv4] fd = "caml_udpv4_socket"
 external udpv4_bind: ipv4 -> port -> [`udpv4] fd resp = "caml_udpv4_bind"
-external udpv4_recvfrom: [`udpv4] fd -> string -> int -> int -> (ipv4 * port * int) resp = "caml_udpv4_recvfrom"
-external udpv4_sendto: [`udpv4] fd -> string -> int -> int -> (ipv4 * port) -> int resp = "caml_udpv4_sendto"
+external udpv4_recvfrom: [`udpv4] fd -> Io_page.t -> int -> int -> (ipv4 * port * int) resp = "caml_udpv4_recvfrom"
+external udpv4_sendto: [`udpv4] fd -> Io_page.t -> int -> int -> (ipv4 * port) -> int resp = "caml_udpv4_sendto"
 
 external domain_uid: unit -> uid = "caml_domain_name"
 external domain_bind: uid -> [`domain] fd resp = "caml_domain_bind"
