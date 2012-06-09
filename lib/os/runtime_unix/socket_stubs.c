@@ -272,11 +272,11 @@ caml_udpv4_bind(value v_ipaddr, value v_port)
 }
 
 CAMLprim value
-caml_udpv4_recvfrom(value v_fd, value v_str, value v_off, value v_len, value v_src)
+caml_udpv4_recvfrom(value v_fd, value v_ba, value v_off, value v_len, value v_src)
 {
-  CAMLparam5(v_fd, v_str, v_off, v_len, v_src);
+  CAMLparam5(v_fd, v_ba, v_off, v_len, v_src);
   CAMLlocal3(v_ret, v_err, v_inf);
-  char *buf = String_val(v_str) + Int_val(v_off);
+  char *buf = Caml_ba_data_val(v_ba) + Int_val(v_off);
   size_t len = Int_val(v_len);
   int fd = Int_val(v_fd);
   struct sockaddr_in sa;
@@ -300,11 +300,11 @@ caml_udpv4_recvfrom(value v_fd, value v_str, value v_off, value v_len, value v_s
 }
 
 CAMLprim value
-caml_udpv4_sendto(value v_fd, value v_str, value v_off, value v_len, value v_dst)
+caml_udpv4_sendto(value v_fd, value v_ba, value v_off, value v_len, value v_dst)
 {
-  CAMLparam5(v_fd, v_str, v_off, v_len, v_dst);
+  CAMLparam5(v_fd, v_ba, v_off, v_len, v_dst);
   CAMLlocal2(v_ret, v_err);
-  char *buf = String_val(v_str) + Int_val(v_off);
+  char *buf = Caml_ba_data_val(v_ba) + Int_val(v_off);
   size_t len = Int_val(v_len);
   int fd = Int_val(v_fd);
   struct sockaddr_in sa;
