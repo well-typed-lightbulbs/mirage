@@ -16,6 +16,8 @@
 
 open Lwt
 
+type handle = unit
+
 type r = int32 (* Grant ref number *)
 
 type perm = RO | RW
@@ -25,7 +27,7 @@ module Raw = struct
   external nr_reserved : unit -> int = "caml_gnttab_reserved"
   external init : unit -> unit = "caml_gnttab_init"
   external fini : unit -> unit = "caml_gnttab_fini"
-  external grant_access : r -> (string*int*int) -> int -> bool -> unit = "caml_gnttab_grant_access"
+  external grant_access : r -> Io_page.t -> int -> bool -> unit = "caml_gnttab_grant_access"
   external end_access : r -> unit = "caml_gnttab_end_access"
 end
 
@@ -90,7 +92,7 @@ let with_refs n f =
   end
 
 let grant_access ~domid ~perm r page =
-  Raw.grant_access r (Io_page.to_bitstring page) domid (match perm with RO -> true |RW -> false)
+  Raw.grant_access r page domid (match perm with RO -> true |RW -> false)
 
 let end_access r =
   Raw.end_access r
@@ -116,6 +118,23 @@ let with_grants ~domid ~perm gnts pages fn =
     List.iter end_access gnts;
     fail exn
   end
+
+let map_grant_ref handle domid r perm = failwith "Unimplemented!"
+
+let unmap handle page = () (* XXX: with this work for multiple pages/refs *)
+
+let with_mapping handle domid r perm fn =
+  let page = map_grant_ref handle domid r perm in
+  try_lwt
+    lwt res = fn page in
+    unmap handle page;
+    return res
+  with exn -> begin
+    unmap handle page;
+    fail exn
+  end
+
+let map_contiguous_grant_refs handle domid rs perm = failwith "Unimplemented!"
 
 let _ =
     Printf.printf "gnttab_init: %d\n%!" (Raw.nr_entries () - 1);

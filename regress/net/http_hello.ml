@@ -45,7 +45,7 @@ let print_data =
 let main () =
   Log.info "Echo" "starting server";
   Net.Manager.create (fun mgr interface id ->
-    Net.Manager.configure interface (`IPv4 ip);
+    lwt () = Net.Manager.configure interface (`IPv4 ip) in
     Http.Server.listen mgr (`TCPv4 ((None, port), spec))
   )
 
