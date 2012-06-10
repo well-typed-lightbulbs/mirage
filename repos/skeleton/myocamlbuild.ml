@@ -69,20 +69,16 @@ module OS = struct
 
 end
 
-let debug = false
-let profiling = false
-let trace = false
-
 (* Rules to directly invoke GCC rather than go through OCaml. *)
 module CC = struct
 
   let cc = getenv "CC" ~default:"cc"
   let ar = getenv "AR" ~default:"ar"
-  let debug_cflags = ["-Wall"; "-g"; "-O3"]
-  let normal_cflags = ["-Wall"; "-g"; "-O3"]
+  let debug_cflags = ["-Wall"; "-g"; "-O1"]
+  let normal_cflags = ["-Wall"; "-O3"]
 
-  let cc_call ~tags ~flags ~dep ~prod =
-    let tags = tags++"cc"++"c" in
+  let cc_call ~tags ~flags dep prod env builder =
+    let tags = tags ++ "cc" in
     let inc = A (sprintf "-I%s/%s" Pathname.pwd (Filename.dirname dep)) in
     Cmd (S (A cc :: inc :: flags @ [T tags; A"-o"; Px prod; P dep]))
 
@@ -96,41 +92,47 @@ module CC = struct
   let register_c_mode ~mode ~descr ~fn =
     let prod = sprintf "%%.%s.o" mode in
     rule (sprintf "cc: .c -> %s (%s)" prod descr)
-      ~prod ~deps:["%.c"; "%.c.deps"]
+      ~prod ~deps:["%.c"] (*; "%.c.deps"] *)
       (fun env builder ->
-         let deps = string_list_of_file (env "%.c.deps") in
-         let cdeps = List.filter (Pathname.check_extension "c") deps in
-         let _ = List.map Outcome.good (builder (List.map (fun x -> [x]) cdeps)) in
          let dep = env "%.c" in
          let prod = env prod in
-         fn ~dep ~prod
+         let tags = tags_of_pathname (env dep) ++ "c" in 
+         fn tags dep prod env builder
       );
+    rule (sprintf "cc: .S -> %s (%s)" prod descr)
+     ~prod ~dep:"%.S"
+     (fun env builder ->
+         let dep = env "%.S" in
+         let prod = env prod in
+         let tags = tags_of_pathname (env dep) ++ "asm" in 
+         fn tags dep prod env builder
+     );
     rule (sprintf "archive: cclib %s.o -> %s.a archive" mode mode)
       ~prod:(sprintf "%%(path:<**/>)lib%%(libname:<*>).%s.a" mode)
       ~dep:"%(path)lib%(libname).cclib"
       (cc_archive ~mode "%(path)lib%(libname).cclib" (sprintf "%%(path)lib%%(libname).%s.a" mode) "%(path)")
 
   let () =
-    let debug_fn ~dep ~prod =
-      let tags = tags_of_pathname dep ++ "compile" in
+    let debug_fn tags dep prod env builder =
+      let tags = tags ++ "compile" in
       let flags = List.map (fun x -> A x) ("-c" :: debug_cflags) in
-      cc_call ~tags ~flags ~dep ~prod in
-    let normal_fn ~dep ~prod =
-      let tags = tags_of_pathname dep ++ "compile" in
+      cc_call ~tags ~flags dep prod env builder in
+    let normal_fn tags dep prod env builder =
+      let tags = tags ++ "compile" in
       let flags = List.map (fun x -> A x) ("-c" :: normal_cflags) in
-      cc_call ~tags ~flags ~dep ~prod in
+      cc_call ~tags ~flags dep prod env builder in
     register_c_mode ~mode:"d" ~descr:"debug" ~fn:debug_fn;
     register_c_mode ~mode:"n" ~descr:"normal" ~fn:normal_fn
 
-  let () =
+  let rules () =
     rule "cc: .c -> .c.deps.raw (raw gcc dependency list)"
       ~prod:"%.c.deps.raw" ~dep:"%.c"
-      (fun env _ ->
+      (fun env builder ->
         let prod = env "%.c.deps.raw" in
         let dep = env "%.c" in
         let flags = [A"-MM";] in
         let tags = tags_of_pathname dep ++ "depend" in
-        cc_call ~tags ~flags ~dep ~prod
+        cc_call ~tags ~flags dep prod env builder
       );
     rule "cc: .c.deps.raw -> .c.deps (dependency list excluding source)"
       ~prod:"%.c.deps" ~dep:"%.c.deps.raw"
@@ -144,60 +146,21 @@ module CC = struct
            Echo (deps, output)
         |_ -> failwith "error in dependency file .deps"
       )
-(*
-  let cc_cflags = List.map (fun x -> A x) !cflags
 
-  let cc_c tags arg out =
-    let tags = tags++"cc"++"c" in
-    Cmd (S (A cc :: [ A"-c"; T(tags++"compile"); A"-o"; Px out; P arg]))
-
-  let cc_compile_c_implem ?tag c o env build =
-    let c = env c and o = env o in
-    cc_c (tags_of_pathname c++"implem"+++tag) c o
-
-  let () =
-    rule "cc: .nc.c -> .c"
-      ~prod:"%.nc.c" ~dep:"%.c"
-      (fun env _ -> cp (env "%.c") (env "%.nc.c"));
-
-    rule "cc: .bc.c -> .c"
-      ~prod:"%.bc.c" ~dep:"%.c"
-      (fun env _ -> cp (env "%.c") (env "%.bc.c"));
-
-    rule "cc: .c -> .o include ocaml dir"
-      ~tags:["cc"; "c"]
-      ~prod:"%.o" ~dep:"%.c"
-      (cc_compile_c_implem "%.c" "%.o");
-
-    rule "cc: .S -> .o assembly compile"
-      ~prod:"%.o" ~dep:"%.S"
-      (cc_compile_c_implem ~tag:"asm" "%.S" "%.o");
-
-    rule "cc: _linux.c -> _os.c platform file"
-      ~prod:"%_os.c"
-      ~dep:("%_" ^ OS.unix_ext ^ ".c")
-      (fun env _ ->
-        let filename = env "%" in
-        ln_s (ps "%s_%s.c" (Pathname.basename filename) OS.unix_ext) (ps "%s_os.c" filename);
-      );
-
-    rule "archive: cclib .o -> .a archive"
-      ~prod:"%(path:<**/>)lib%(libname:<*> and not <*.*>).a"
-      ~dep:"%(path)lib%(libname).cclib"
-      (cc_archive "%(path)lib%(libname).cclib" "%(path)lib%(libname).a" "%(path)")
-*)
+  let flags () =
+     flag ["cc";"depend"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"compile"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"compile"; "asm"] & S [A"-D__ASSEMBLY__"]
 
 end
 
 (* Xen cross compilation *)
-(*
 module Xen = struct
-  open CC
   (* All the xen cflags for compiling against an embedded environment *)
   let xen_incs =
     (* base GCC standard include dir *)
     let gcc_install =
-      let cmd = ps "LANG=C %s -print-search-dirs | sed -n -e 's/install: \\(.*\\)/\\1/p'" cc in
+      let cmd = ps "LANG=C %s -print-search-dirs | sed -n -e 's/install: \\(.*\\)/\\1/p'" CC.cc in
       let dir = Util.run_and_read cmd in
       Filename.concat dir "include" in
     (* root dir of xen bits *)
@@ -206,24 +169,25 @@ module Xen = struct
     (* Basic cflags *)
     let all_cflags = List.map (fun x -> A x)
       [ "-U"; "__linux__"; "-U"; "__FreeBSD__";
-        "-U"; "__sun__"; "-D__MiniOS__";
-        "-D__MiniOS__"; "-D__x86_64__";
-        "-D__XEN_INTERFACE_VERSION__=0x00030205";
-        "-D__INSIDE_MINIOS__";
-        "-nostdinc"; "-std=gnu99"; "-fno-stack-protector";
-        "-m64"; "-mno-red-zone"; "-fno-reorder-blocks";
-        "-fstrict-aliasing"; "-momit-leaf-frame-pointer"; "-mfancy-math-387"
+	"-U"; "__sun__"; "-D__MiniOS__";
+	"-D__MiniOS__"; "-D__x86_64__";
+	"-D__XEN_INTERFACE_VERSION__=0x00030205";
+	"-D__INSIDE_MINIOS__";
+	"-nostdinc"; "-std=gnu99"; "-fno-stack-protector";
+	"-m64"; "-mno-red-zone"; "-fno-reorder-blocks";
+	"-fstrict-aliasing"; "-momit-leaf-frame-pointer"; "-mfancy-math-387"
       ] in
     (* Include dirs *)
     let incdirs= A ("-I"^gcc_install) :: List.flatten (
       List.map (fun x ->[A"-isystem"; A (ps "%s/%s" root_incdir x)])
-        [""; "mini-os"; "mini-os/x86"]) in
+	[""; "mini-os"; "mini-os/x86"]) in
     all_cflags @ incdirs
 
   (* The private libm include dir *)
   let libm_incs = [ A (ps "-I%s/runtime_xen/libm" Pathname.pwd) ]
 
   (* defines used by the ocaml runtime, as well as includes *)
+  let debug = false
   let ocaml_debug_inc = if debug then [A "-DDEBUG"] else []
   let ocaml_incs = [
     A "-DCAML_NAME_SPACE"; A "-DTARGET_amd64"; A "-DSYS_xen";
@@ -231,9 +195,6 @@ module Xen = struct
 
   let ocaml_asmrun = [ A"-DNATIVE_CODE" ]
   let ocaml_byterun = [ ]
-
-  (* ocaml system include directory i.e. /usr/lib/ocaml *)
-  let ocaml_sys_incs = [ A"-I"; Px (Util.run_and_read "ocamlc -where"); ]
 
   (* dietlibc bits, mostly extra warnings *)
   let dietlibc_incs = [
@@ -243,114 +204,33 @@ module Xen = struct
     A (ps "-I%s/runtime_xen/dietlibc" Pathname.pwd)
   ]
 
-  let cc_cflags = List.map (fun x -> A x) !cflags
-
-  let cc_c tags arg out =
-    let tags = tags++"cc"++"c" in
-    Cmd (S (A cc :: [ A"-c"; T(tags++"compile"); A"-o"; Px out; P arg]))
-
-  let cc_compile_c_implem ?tag c o env build =
-    let c = env c and o = env o in
-    cc_c (tags_of_pathname c++"implem"+++tag) c o
-
-  let cc_archive clib a path env build =
-    let clib = env clib and a = env a and path = env path in
-    let objs = List.map (fun x -> path / x) (string_list_of_file clib) in
-    let results = build (List.map (fun x -> [x]) objs) in
-    let objs = List.map (function
-      | Outcome.Good o -> o
-      | Outcome.Bad exn -> raise exn) results in
-    Cmd(S[A ar; A"rc"; Px a; T(tags_of_pathname a++"c"++"archive"); atomize objs])
-
-  let () =
+  let rules () =
+    let xen_cflags = xen_incs @ dietlibc_incs in
+    let xen_fn ~cflags tags dep prod env builder =
+      let tags = tags ++ "compile" ++ "xen" in
+      let flags = A"-c" :: xen_cflags @ (List.map (fun x -> A x) cflags) in
+      CC.cc_call ~tags ~flags dep prod env builder in
+    CC.register_c_mode ~mode:"xn" ~descr:"xen normal" ~fn:(xen_fn ~cflags:CC.normal_cflags);
+    CC.register_c_mode ~mode:"xd" ~descr:"xen debug" ~fn:(xen_fn ~cflags:CC.debug_cflags);
+    (* Custom rule to copy an ocaml file to .nc.c or .bc.c for native/bytecode *)
     rule "cc: .nc.c -> .c"
       ~prod:"%.nc.c" ~dep:"%.c"
       (fun env _ -> cp (env "%.c") (env "%.nc.c"));
-
     rule "cc: .bc.c -> .c"
       ~prod:"%.bc.c" ~dep:"%.c"
-      (fun env _ -> cp (env "%.c") (env "%.bc.c"));
+      (fun env _ -> cp (env "%.c") (env "%.bc.c"))
 
-    rule "cc: .c -> .o include ocaml dir"
-      ~tags:["cc"; "c"]
-      ~prod:"%.o" ~dep:"%.c"
-      (cc_compile_c_implem "%.c" "%.o");
-
-    rule "cc: .S -> .o assembly compile"
-      ~prod:"%.o" ~dep:"%.S"
-      (cc_compile_c_implem ~tag:"asm" "%.S" "%.o");
-
-    rule "cc: _linux.c -> _os.c platform file"
-      ~prod:"%_os.c"
-      ~dep:("%_" ^ OS.unix_ext ^ ".c")
-      (fun env _ ->
-        let filename = env "%" in
-        ln_s (ps "%s_%s.c" (Pathname.basename filename) OS.unix_ext) (ps "%s_os.c" filename);
-      );
-
-    rule "archive: cclib .o -> .a archive"
-      ~prod:"%(path:<**/>)lib%(libname:<*> and not <*.*>).a"
-      ~dep:"%(path)lib%(libname).cclib"
-      (cc_archive "%(path)lib%(libname).cclib" "%(path)lib%(libname).a" "%(path)")
+  let flags () =
+    flag ["ocaml_asmrun"] & S[A"-DNATIVE_CODE"];
+    flag ["ocaml_byterun"] & S[A"-DBYTE_CODE"]
 end
 
 let _ = dispatch begin function
+  | Before_rules ->
+     CC.rules ();
+     Xen.rules ();
   | After_rules ->
-    (* do not compile and pack with the standard lib *)
-    flag ["ocaml"; "compile"; ] & S [A"-nostdlib"; A"-annot"];
-    if debug then flag ["ocaml"; "compile"] & S [A"-g"];
-    flag ["ocaml"; "pack"; ] & S [A"-nostdlib"];
-    if profiling then flag ["ocaml"; "compile"; "native" ] & S [A"-p"];
-    (* ocamldoc always uses the JSON generator *)
-    let docgenerator = "../../../docs/_build/odoc_json.cmxs" in
-    flag ["ocaml"; "doc"] & S [A"-g"; Px docgenerator ];
-    (* use pa_`lib` syntax extension if the _tags file specifies it *)
-    let p4_build = "../../../syntax/_build" in
-    let camlp4_bc =
-      S[A"-pp"; 
-        A (ps "camlp4o -I %s str.cma pa_mirage.cma -cow-no-open %s %s" 
-             p4_build (if debug then "-lwt-debug" else "")
-             (if trace then "pa_trace.cma" else "")
-          )
-       ] 
-    in
-    let camlp4_nc = 
-      S[A"-pp";
-        A (ps "camlp4o.opt -I %s str.cmxs pa_mirage.cmxs -cow-no-open %s %s"
-             p4_build (if debug then "-lwt-debug" else "")
-             (if trace then "pa_trace.cmxs" else "")
-          )] 
-    in
-    let camlp4_cmd = if native_p4 then camlp4_nc else camlp4_bc in
-    flag ["ocaml"; "compile" ; "pa_mirage"] & camlp4_cmd;
-    flag ["ocaml"; "ocamldep"; "pa_mirage"] & camlp4_cmd;
-    flag ["ocaml"; "infer_interface"; "pa_mirage"] & camlp4_cmd;
-    flag ["ocaml"; "doc"; "pa_mirage"] & camlp4_cmd;
-    (* add a dependency to the local pervasives, only used in stdlib compile *)
-    dep ["ocaml"; "compile"; "need_pervasives"] ["std/pervasives.cmi"];
-
-    (* base cflags for C code *)
-    flag ["c"; "compile"] & S CC.cc_cflags;
-    flag ["asm"; "compile"] & S [A "-D__ASSEMBLY__"];
-    if profiling then
-      flag ["c"; "compile"] & S [A"-pg"];
-
-    (* xen code needs special cflags *)
-    flag ["c"; "compile"; "include_xen"] & S CC.xen_incs;
-    flag ["c"; "compile"; "include_libm"] & S CC.libm_incs;
-    flag ["c"; "compile"; "include_ocaml"] & S CC.ocaml_incs;
-    flag ["c"; "compile"; "ocaml_byterun"] & S CC.ocaml_byterun;
-    flag ["c"; "compile"; "ocaml_asmrun"] & S CC.ocaml_asmrun;
-    flag ["c"; "compile"; "include_system_ocaml"] & S CC.ocaml_sys_incs;
-    flag ["c"; "compile"; "include_dietlibc"] & S CC.dietlibc_incs;
-    flag ["c"; "compile"; "pic"] & S [A"-fPIC"]
-  | _ -> ()
-end
-*)
-
-let _ = dispatch begin function
-  | After_rules ->
-     flag ["cc";"depend"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
-     flag ["cc";"compile"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
+     CC.flags ();
+     Xen.flags ();
   | _ -> ()
 end
