@@ -69,6 +69,17 @@ module OS = struct
 
 end
 
+(* Configuration rules for packages *)
+module Configure = struct
+  let rules () =
+    rule (sprintf "include flags for package")
+     ~prod:"%.i.pkg"
+     (fun env builder ->
+       Cmd (S[A"ocamlfind";A"query";A"i-format"])
+     )
+end
+
+
 (* Rules to directly invoke GCC rather than go through OCaml. *)
 module CC = struct
 
