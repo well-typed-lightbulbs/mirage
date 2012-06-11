@@ -124,7 +124,7 @@ module Req = struct
               last_sector = get_segment_last_sector seg;
           }
       ) in {
-          op = op_of_int (get_hdr_op slot);
+          op = int_to_op (get_hdr_op slot);
           handle = get_hdr_handle slot;
           id = get_hdr_id slot;
           sector = get_hdr_sector slot;
@@ -187,8 +187,8 @@ module Res = struct
 
   let read_response slot =
     get_response_hdr_id slot, {
-      op = Req.op_of_int (get_response_hdr_op slot);
-      st = rsp_of_int (get_response_hdr_st slot)
+      op = Req.int_to_op (get_response_hdr_op slot);
+      st = int_to_rsp (get_response_hdr_st slot)
     }
 end
 

@@ -22,4 +22,3 @@ type reason =
 
 val shutdown: reason -> unit
 
-
