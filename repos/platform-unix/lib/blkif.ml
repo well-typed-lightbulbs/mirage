@@ -87,6 +87,7 @@ let create ~id ~filename : Devices.blkif Lwt.t =
     method destroy = Socket.close t.fd
   end)
 
+(*
 (* Register Unix.Blkif provider with the device manager *)
 let _ =
   let plug_mvar = Lwt_mvar.create_empty () in
@@ -129,3 +130,4 @@ let _ =
       |_ -> ()) env;
     Lwt_list.iter_s (Lwt_mvar.put plug_mvar) !vbds
   )
+*)
