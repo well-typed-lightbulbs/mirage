@@ -71,16 +71,20 @@ end
 
 (* Configuration rules for packages *)
 module Configure = struct
-  let config x = Pathname.pwd ^ "/_config/" ^ x
+  let config x = 
+    try string_list_of_file (Pathname.pwd ^ "/_config/" ^ x)
+    with Sys_error _ ->
+      eprintf "_config directory not found: run ./configure first\n%!";
+      exit 1
 
   let ppflags () =
-    let p4deps = string_list_of_file (config "pp") in
+    let p4deps = config "pp" in
     match p4deps with
     |[] -> ()
     |_ -> Options.ocaml_ppflags := "camlp4o" :: p4deps
 
   let flags () =
-    let incs = string_list_of_file (config "inc") in
+    let incs = config "inc" in
     let oincs = List.map (fun x -> Sh x) incs in
     flag ["ocaml"; "ocamldep"] & S oincs;
     flag ["ocaml"; "compile"] & S oincs;

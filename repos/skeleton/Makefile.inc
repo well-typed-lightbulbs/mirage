@@ -29,5 +29,8 @@ install: META build
 clean:
 	ocamlbuild -clean
 
+distclean: clean
+	rm -rf _config META
+
 META: META.in
 	sed -e "s/@VERSION@/$(VERSION)/g" < $< > $@
