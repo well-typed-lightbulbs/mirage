@@ -1,1 +1,2 @@
 <lib/*.ml>: for-pack(OS)
+<runtime_unix/*.c>: include_syscaml

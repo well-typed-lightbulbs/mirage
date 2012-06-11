@@ -1,0 +1,16 @@
+#!/bin/sh
+# Depending on the architecture, symlink in the correct tap_stubs file.
+
+OS=`uname -s`
+
+case "$OS" in
+Darwin)
+  ln -nsf tap_stubs_macosx.c runtime_unix/tap_stubs_os.c
+  ;;
+Linux)
+  ln -nsf tap_stubs_linux.c runtime_unix/tap_stubs_os.c
+  ;;
+*)
+  echo Unknown arch $OS
+  exit 1
+esac
