@@ -6,8 +6,11 @@ LIB_CMA = $(LIBS:%=lib/%.cma)
 
 SYNTAX_CMA = $(SYNTAX:%=syntax/%.cma)
 
+RUNTIME_TARGETS = $(RUNTIME_C:%=runtime/%.d.a) $(RUNTIME_C:%=runtime/%.n.a)
+
 TARGETS = $(LIBS:%=lib/%.cmx) $(LIBS:%=lib/%.cma)
 TARGETS += $(SYNTAX:%=syntax/%.cma)
+TARGETS += $(RUNTIME_TARGETS)
 
 BC_TARGETS = $(LIB_CMI) $(LIB_CMA)
 BC_BUILT = $(BC_TARGETS:%=_build/%)

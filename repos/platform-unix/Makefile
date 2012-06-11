@@ -1,4 +1,5 @@
 LIBS := oS
-NAME=mirage-unix
+RUNTIME_C := libunixrun
+NAME := mirage-unix
 
 include Makefile.inc
