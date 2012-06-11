@@ -1,1 +1,2 @@
-<lib/*.c>: include_syscaml
+<runtime/*.c>: include_syscaml
+
