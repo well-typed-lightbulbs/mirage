@@ -71,12 +71,28 @@ end
 
 (* Configuration rules for packages *)
 module Configure = struct
-  let rules () =
-    rule (sprintf "include flags for package")
-     ~prod:"%.i.pkg"
-     (fun env builder ->
-       Cmd (S[A"ocamlfind";A"query";A"i-format"])
-     )
+  let config x = Pathname.pwd ^ "/_config/" ^ x
+
+  let ppflags () =
+    let p4deps = string_list_of_file (config "pp") in
+    match p4deps with
+    |[] -> ()
+    |_ -> Options.ocaml_ppflags := "camlp4o" :: p4deps
+
+  let flags () =
+    let incs = string_list_of_file (config "inc") in
+    let oincs = List.map (fun x -> Sh x) incs in
+    flag ["ocaml"; "ocamldep"] & S oincs;
+    flag ["ocaml"; "compile"] & S oincs;
+    (* NOTE: we cannot use the built-in use_camlp4, as that forces
+     * camlp4lib.cma to be linked with the mllib target, which results
+     * in a non-functioning extension as it will be loaded twice.
+     * So this simply includes the directory, which leads to a working archive *) 
+    let p4incs = [A"-I";A"+camlp4"] in
+    flag ["ocaml"; "ocamldep"; "include_camlp4"] & S p4incs;
+    flag ["ocaml"; "compile"; "include_camlp4"] & S p4incs;
+  
+  
 end
 
 
@@ -236,6 +252,7 @@ module Xen = struct
     flag ["ocaml_byterun"] & S[A"-DBYTE_CODE"]
 end
 
+let _ = Configure.ppflags ();;
 let _ = dispatch begin function
   | Before_rules ->
      CC.rules ();
@@ -243,5 +260,6 @@ let _ = dispatch begin function
   | After_rules ->
      CC.flags ();
      Xen.flags ();
+     Configure.flags ()
   | _ -> ()
 end

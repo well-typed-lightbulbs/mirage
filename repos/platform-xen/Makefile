@@ -1,4 +1,5 @@
 #TARGETS := runtime_xen/all.otarget
-TARGETS := lib/oS.cmx
+LIBS := oS
+NAME=mirage-xen
 
 include Makefile.inc

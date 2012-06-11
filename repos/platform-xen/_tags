@@ -1,0 +1,2 @@
+true: annot
+<lib/*.ml>: for-pack(OS)

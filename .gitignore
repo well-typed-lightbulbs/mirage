@@ -24,3 +24,5 @@ CVS/
 doc/html/
 /screenlog.*
 tools/fs/*.o
+
+_config

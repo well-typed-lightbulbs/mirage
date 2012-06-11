@@ -1,0 +1,2 @@
+true: pp(camlp4o -I +camlp4 -parser Camlp4QuotationCommon -parser Camlp4OCamlOriginalQuotationExpander -parser Camlp4GrammarParser)
+true: include_camlp4
