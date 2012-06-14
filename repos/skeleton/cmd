@@ -1,0 +1,115 @@
+#!/bin/sh -ex
+# Script that invokes ocamlbuild commands for various targets
+
+# source the package variables
+if [ -e "_vars" ]; then
+  . _vars
+fi
+
+for syntax in ${SYNTAX}; do
+  SYNTAX_BC="${SYNTAX_BC} syntax/${syntax}.cma"
+  SYNTAX_NCS="$SYNTAX_NC syntax/${syntax}.cmxa"
+  SYNTAX_NCS="$SYNTAX_NCS syntax/${syntax}.cmxs"
+done
+
+for lib in ${LIB}; do
+  LIB_MOD="${LIB_MOD} lib/${lib}"
+  LIB_BC="${LIB_BC} lib/${lib}.cma"
+  LIB_NC="${LIB_NC} lib/${lib}.cmxa"
+  LIB_NCS="${LIB_NCS} lib/${lib}.cmxs"
+done
+
+BC_FILES="${BC_FILES} ${SYNTAX_BC} ${LIB_BC}"
+NC_FILES="${NC_FILES} ${SYNTAX_NC} ${LIB_NC}"
+NCS_FILES="${NCS_FILES} ${SYNTAX_NCS} ${LIB_NCS}"
+
+for lib in ${RUNTIME}; do
+  RUNTIME_FILES="runtime/lib${lib}.d.a runtime/lib${lib}.n.a"
+done
+
+OCAMLBUILD=${ocamlbuild:-OCAMLBUILD}
+OCAMLBUILD_FLAGS=-classic-display
+
+# create entries in the _config/ directory 
+function configure {
+  # initialise _config directory
+  rm -rf _config
+  mkdir -p _config
+  # _config/inc has -I flags
+  ocamlfind query -r -i-format ${DEPS} > _config/flags.inc
+  # _config/archives.* contains dependency archives for linking tests
+  ocamlfind query -r -a-format -predicates native ${DEPS} > _config/archives.native
+  ocamlfind query -r -a-format -predicates byte ${DEPS} > _config/archives.byte
+  # _config/built.runtime contains the archive files
+  touch _config/clibs.normal _config/clibs.debug
+  for i in ${RUNTIME}; do 
+    echo ${i}.n >> _config/clibs.normal
+    echo ${i}.d >> _config/clibs.debug
+  done
+  # _config/pp has camlp4 flags for libraries
+  ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' ${DEPS} > _config/syntax.deps
+  # _config/syntax has flags to build p4 extensions in syntax/
+  ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' camlp4.quotations.o camlp4.lib camlp4.extend > _config/syntax.build
+  # _config/p4_built are the just-built syntax extensions
+  touch _config/syntax.test
+  for i in ${SYNTAX}; do echo syntax/$i.cma >> _config/syntax.test; done
+  # _config/lib_built.native/byte contains the ocaml library just built
+  echo ${LIB_MOD} > _config/lib.built
+  echo ${LIB_NC} > _config/lib.built.native
+  echo ${LIB_BC} > _config/lib.built.byte
+  # TODO check ocamlopt is installed
+  touch _config/flag.opt
+  # TODO getopt parsing for this and implement various options
+  touch _config/flag.debug
+  touch _config/flag.profile
+  touch _config/flag.natdynlink
+}
+
+# invoke native code and byte code compiler targets
+function compile {
+  # build bytecode files and C bindings always
+  t="${LIB_BC} ${SYNTAX_BC} ${RUNTIME_FILES}"
+  # optionally build native code files
+  [ -e "_config/flag.opt" ] && t="$t ${LIB_NC} ${SYNTAX_NC}"
+  [ -e "_config/flag.natdynlink" ] && t="$t ${LIB_NCS} ${SYNTAX_NCS}"
+  ${OCAMLBUILD} ${OCAMLBUILD_FLAGS} ${t}
+}
+
+# generate META file and invoke ocamlfind installation
+function install {
+  sed -e "s/@VERSION@/${VERSION}/g" < META.in > _config/META
+  ocamlfind remove ${NAME} || true
+  t="${FILES} ${RUNTIME_FILES} ${BC_FILES}"
+  [ -e _config/flag.opt ] && t="${f} ${NC_FILES}"
+  [ -e _config/flag.natdynlink ] && t="${f} ${NCS_FILES}"
+  cd _build
+  # TODO DESTDIR and OCAMLFIND_FLAGS from environmen
+  ocamlfind install ${NAME} ../_config/META ${t}
+}
+
+# tests also include the built syntax extensions (if any)
+function run_tests {
+  for test in ${TESTS}; do
+    t="lib_test/$test.byte"
+    [ -e _config/flag.opt ] && t="${t} lib_test/$test.native"
+    ${OCAMLBUILD} ${OCAMLBUILD_FLAGS} ${t}
+  done
+}
+
+function clean {
+  ${OCAMLBUILD} -clean
+  rm -rf _config
+}
+
+cmd=$1
+shift
+
+case "$cmd" in
+conf*) configure ;;
+compile|build) compile ;;
+install) install ;;
+clean) clean ;;
+doc) doc ;;
+test) run_tests ;;
+*) echo unknown command: $cmd; exit 1 ;;
+esac

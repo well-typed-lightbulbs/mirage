@@ -25,9 +25,6 @@ open Printf
 let ps = Printf.sprintf
 let ep = Printf.eprintf
 
-let profiling = false
-let native_p4 = true
-
 (* Utility functions (e.g. to execute a command and return lines read) *)
 module Util = struct
   let split s ch =
@@ -42,63 +39,61 @@ module Util = struct
     with Not_found -> !x
 
     let split_nl s = split s '\n'
-
     let run_and_read x = List.hd (split_nl (Ocamlbuild_pack.My_unix.run_and_read x))
 end
 
 let ocaml_libdir = Util.run_and_read "ocamlc -where"
 
-(* OS detection *)
-module OS = struct
-
-  type u = Linux | Darwin | FreeBSD
-  type t = Unix of u | Xen | Node
-
-  let host =
-    match String.lowercase (Util.run_and_read "uname -s") with
-    | "linux"  -> Unix Linux
-    | "darwin" -> Unix Darwin
-    | "freebsd" -> Unix FreeBSD
-    | os -> Printf.eprintf "`%s` is not a supported host OS\n" os; exit (-1)
-
-  let unix_ext = match host with
-    | Unix Linux  -> "linux"
-    | Unix Darwin -> "macosx"
-    | Unix FreeBSD -> "freebsd"
-    | _ -> Printf.eprintf "unix_ext called on a non-UNIX host OS\n"; exit (-1)
-
-end
-
 (* Configuration rules for packages *)
 module Configure = struct
+  (* Read a list of lines from files in _config/<arg> *)
   let config x = 
     try string_list_of_file (Pathname.pwd ^ "/_config/" ^ x)
     with Sys_error _ ->
-      eprintf "_config directory not found: run ./configure first\n%!";
+      eprintf "_config/%s not found: run ./configure first\n%!" x;
       exit 1
 
+  (* Preprocessor flags for syntax extensions *)
   let ppflags () =
-    let p4deps = config "pp" in
-    match p4deps with
+    let camlp4o flags = S ((List.map (fun x -> A x) flags)) in
+    (* Include the camlp4 flags to build an extension *)
+    flag ["ocaml";"pp";"build_syntax"] & (camlp4o (config "syntax.build"));
+    (* Syntax extensions for the libraries being built *)
+    let flags = config "syntax.deps" in
+    if List.length flags > 0 then flag ["ocaml";"pp"] & (camlp4o flags);
+    (* Extra extensions for test files from the extension just built *)
+    match flags @ (config "syntax.test") with
     |[] -> ()
-    |_ -> Options.ocaml_ppflags := "camlp4o" :: p4deps
+    |tflags ->
+      flag ["ocaml";"pp";"build_test"] & (camlp4o tflags);
+      dep ["ocaml";"ocamldep";"build_test"] & (config "syntax.test")
 
   let flags () =
-    let incs = config "inc" in
-    let oincs = List.map (fun x -> Sh x) incs in
+    (* Include path for dependencies *)
+    let oincs = List.map (fun x -> Sh x) (config "flags.inc") in
     flag ["ocaml"; "ocamldep"] & S oincs;
     flag ["ocaml"; "compile"] & S oincs;
     (* NOTE: we cannot use the built-in use_camlp4, as that forces
      * camlp4lib.cma to be linked with the mllib target, which results
      * in a non-functioning extension as it will be loaded twice.
      * So this simply includes the directory, which leads to a working archive *) 
-    let p4incs = [A"-I";A"+camlp4"] in
-    flag ["ocaml"; "ocamldep"; "include_camlp4"] & S p4incs;
-    flag ["ocaml"; "compile"; "include_camlp4"] & S p4incs;
-  
-  
+    let p4incs = [A"-I"; A"+camlp4"] in
+    flag ["ocaml"; "ocamldep"; "build_syntax"] & S p4incs;
+    flag ["ocaml"; "compile"; "build_syntax"] & S p4incs;
+    (* For the test libraries, include the just-built library path *)
+    List.iter (ocaml_lib ~tag_name:"build_test" ~dir:"lib") (config "lib.built");
+    let to_p x = List.map (fun x -> P x) (config x) in
+    dep ["ocaml"; "native"; "build_test"] (config "lib.built.native");
+    dep ["ocaml"; "byte"; "build_test"] (config "lib.built.byte");
+    flag ["ocaml"; "link"; "native"; "build_test"] & S(to_p "archives.native");
+    flag ["ocaml"; "link"; "byte"; "build_test"] & S(to_p "archives.byte");
+    (* Include the -cclib for any bindings being built *)
+    let ccinc_n = (A"-ccopt")::(A"-Lruntime"):: 
+     (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) (config "clibs.normal"))) in
+    dep ["link"; "library"; "ocaml"] (List.map (fun lib -> "runtime/lib"^lib^".a") (config "clibs.normal"));
+    flag ["link"; "library"; "ocaml"; "byte"] & S ccinc_n;
+    flag ["link"; "library"; "ocaml"; "native"] & S ccinc_n
 end
-
 
 (* Rules to directly invoke GCC rather than go through OCaml. *)
 module CC = struct
@@ -179,10 +174,9 @@ module CC = struct
       )
 
   let flags () =
-     flag ["cc";"depend"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
-     flag ["cc";"compile"; "include_syscaml"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"depend"; "build_runtime"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"compile"; "build_runtime"] & S [A("-I"^ocaml_libdir)];
      flag ["cc";"compile"; "asm"] & S [A"-D__ASSEMBLY__"]
-
 end
 
 (* Xen cross compilation *)
@@ -256,7 +250,8 @@ module Xen = struct
     flag ["ocaml_byterun"] & S[A"-DBYTE_CODE"]
 end
 
-let _ = Configure.ppflags ();;
+let _ = Options.make_links := false;;
+
 let _ = dispatch begin function
   | Before_rules ->
      CC.rules ();
@@ -264,6 +259,7 @@ let _ = dispatch begin function
   | After_rules ->
      CC.flags ();
      Xen.flags ();
+     Configure.ppflags ();
      Configure.flags ()
   | _ -> ()
 end
