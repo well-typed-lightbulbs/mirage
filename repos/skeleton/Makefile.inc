@@ -7,6 +7,7 @@ LIB_CMA = $(LIBS:%=lib/%.cma)
 SYNTAX_CMA = $(SYNTAX:%=syntax/%.cma)
 
 RUNTIME_TARGETS = $(RUNTIME_C:%=runtime/%.d.a) $(RUNTIME_C:%=runtime/%.n.a)
+RUNTIME_BUILT = $(RUNTIME_TARGETS:%=_build/%)
 
 TARGETS = $(LIBS:%=lib/%.cmx) $(LIBS:%=lib/%.cma)
 TARGETS += $(SYNTAX:%=syntax/%.cma)
@@ -27,7 +28,8 @@ build:
 install: META build
 	ocamlfind remove $(NAME) || true
 	ocamlfind install $(NAME) $(FILES) META \
-	  $(BC_BUILT) $(NC_BUILT) $(BCP4_BUILT)
+	  $(BC_BUILT) $(NC_BUILT) $(BCP4_BUILT) \
+	  $(RUNTIME_BUILT)
 	
 clean:
 	ocamlbuild -clean

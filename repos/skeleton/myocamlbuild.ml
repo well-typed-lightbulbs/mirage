@@ -53,6 +53,11 @@ module Configure = struct
       eprintf "_config/%s not found: run ./configure first\n%!" x;
       exit 1
 
+  (* Test to see if a flag file exists *)
+  let test_flag x = Sys.file_exists (sprintf "%s/_config/flag.%s" Pathname.pwd x)
+  let opt_flag fn a = if test_flag "opt" then List.map fn a else []
+  let natdynlink_flag fn a = if test_flag "natdynlink" then opt_flag fn a else []
+
   (* Preprocessor flags for syntax extensions *)
   let ppflags () =
     let camlp4o flags = S ((List.map (fun x -> A x) flags)) in
@@ -65,8 +70,8 @@ module Configure = struct
     match flags @ (config "syntax.test") with
     |[] -> ()
     |tflags ->
-      flag ["ocaml";"pp";"build_test"] & (camlp4o tflags);
-      dep ["ocaml";"ocamldep";"build_test"] & (config "syntax.test")
+      flag ["ocaml"; "pp"; "build_test"] & (camlp4o tflags);
+      dep ["ocaml"; "ocamldep"; "build_test"] & (config "syntax.test")
 
   let flags () =
     (* Include path for dependencies *)
@@ -88,11 +93,46 @@ module Configure = struct
     flag ["ocaml"; "link"; "native"; "build_test"] & S(to_p "archives.native");
     flag ["ocaml"; "link"; "byte"; "build_test"] & S(to_p "archives.byte");
     (* Include the -cclib for any bindings being built *)
-    let ccinc_n = (A"-ccopt")::(A"-Lruntime"):: 
-     (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) (config "clibs.normal"))) in
-    dep ["link"; "library"; "ocaml"] (List.map (fun lib -> "runtime/lib"^lib^".a") (config "clibs.normal"));
-    flag ["link"; "library"; "ocaml"; "byte"] & S ccinc_n;
-    flag ["link"; "library"; "ocaml"; "native"] & S ccinc_n
+    let ccinc libs = (A"-ccopt")::(A"-Lruntime"):: 
+      (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) libs)) in
+    let clibs_files = List.map (sprintf "runtime/lib%s.n.a") (config "clibs") in
+    let clibs_libname = ccinc (List.map (sprintf "%s.n") (config "clibs")) in
+    dep ["link"; "library"; "ocaml"] clibs_files;
+    flag ["link"; "library"; "ocaml"; "byte"] & S clibs_libname;
+    flag ["link"; "library"; "ocaml"; "native"] & S clibs_libname
+
+  (* Create an .all target based on _config flags *)
+  let rules () =
+    rule "build all targets: %.all contains what was built"
+      ~prods:["%.all"; "%.n.all"; "%.d.all"; "%.p.all"]
+      (fun env builder ->
+         (* Calculate build outputs for lib/ *)
+         let build_lib ~byte ?native ?natdynlink () =
+           let libs = config "lib.built" in
+           let byte = List.flatten (List.map (fun lib -> List.map (fun e->lib^e) byte) libs) in
+           let native = match native with None -> []
+             |Some n -> if test_flag "opt" then List.map (fun x -> x^n) libs else [] in
+           let natdynlink = match natdynlink with None -> []
+             |Some n -> if test_flag "natdynlink" then List.map (fun x -> x^n) libs else [] in
+           byte @ native @ natdynlink in
+         let libs = build_lib ~byte:[".cmi";".cma"] ~native:".cmxa" ~natdynlink:".cmxs" () in
+         (* Build runtime libs *)
+         let runtimes = List.flatten (List.map (fun x ->
+          [(sprintf "runtime/lib%s.n.a" x);(sprintf "runtime/lib%s.d.a" x)]) (config "clibs")) in
+         (* Build syntax extensions *)
+         let syntaxes =
+           let syn = config "syntax" in
+           let bc = List.map (fun x -> sprintf "syntax/%s.cma" x) syn in
+           let nc = opt_flag (fun x -> sprintf "syntax/%s.cmxa" x) syn in
+           let ncs = natdynlink_flag (fun x -> sprintf "syntax/%s.cmxs" x) syn in
+           bc @ nc @ ncs in
+         (* Execute the rules*) 
+         let build ?(pre="") targs =
+           let out = List.map Outcome.good (builder (List.map (fun x -> [x]) targs)) in
+           Echo ((List.map (fun x -> x^"\n") out), (env "%"^pre^".all")) in
+         let all = libs @ runtimes @ syntaxes in
+         Seq [ (build all) ]
+      )
 end
 
 (* Rules to directly invoke GCC rather than go through OCaml. *)
@@ -260,6 +300,7 @@ let _ = dispatch begin function
      CC.flags ();
      Xen.flags ();
      Configure.ppflags ();
-     Configure.flags ()
+     Configure.flags ();
+     Configure.rules ()
   | _ -> ()
 end
