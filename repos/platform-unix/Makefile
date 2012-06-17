@@ -1,5 +1,14 @@
-LIBS := oS
-RUNTIME_C := libunixrun
-NAME := mirage-unix
+.PHONY: all clean depend install
 
-include Makefile.inc
+all: depend
+	./cmd configure
+	./cmd build
+
+depend:
+	@./configure.arch
+
+install:
+	./cmd install
+
+clean:
+	./cmd clean
