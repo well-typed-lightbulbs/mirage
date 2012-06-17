@@ -155,8 +155,10 @@ module Configure = struct
           let nc = if_opt (fun x -> sprintf "syntax/%s.cmxa" x) syn in
           let ncs = if_natdynlink (fun x -> sprintf "syntax/%s.cmxs" x) syn in
           bc @ nc @ ncs in
+        (* Any extra targets *)
+        let extra = config "extra" in
         (* Execute the rules and echo everything built into the %.all file *) 
-        let targs = libs @ runtimes @ syntaxes in
+        let targs = libs @ runtimes @ syntaxes @ extra in
         let out = List.map Outcome.good (builder (List.map (fun x -> [x]) targs)) in
         Echo ((List.map (fun x -> x^"\n") out), (env "%.all")) 
       )
@@ -167,17 +169,12 @@ module CC = struct
 
   let cc = getenv "CC" ~default:"cc"
   let ar = getenv "AR" ~default:"ar"
-  let cflags = 
-    let default = getenv "CFLAGS" ~default:"-Wall -O2" in
-    (* compile 64-bit with -fPIC *)
-    match OS.arch with
-    |OS.X86_64 -> default^" -fPIC"
-    |_ -> default
+  let cflags = Configure.config_sh "cflags"
 
   let cc_call tags dep prod env builder =
     let dep = env dep and prod = env prod in
     let tags = tags_of_pathname dep++"cc"++"compile"++tags in 
-    let flags = [A"-c"; Sh cflags] in
+    let flags = [A"-c"; cflags] in
     let inc = A (sprintf "-I%s/%s" Pathname.pwd (Filename.dirname dep)) in
     Cmd (S (A cc :: inc :: flags @ [T tags; A"-o"; Px prod; P dep]))
 
@@ -190,7 +187,7 @@ module CC = struct
 
   let rules () = 
     rule "cc: %.c -> %.o" ~prod:"%.o" ~dep:"%.c" (cc_call "c" "%.c" "%.o");
-    rule "cc: %.S -> %.o" ~prod:"%.o" ~dep:"%.c" (cc_call "asm" "%.S" "%.o");
+    rule "cc: %.S -> %.o" ~prod:"%.o" ~dep:"%.S" (cc_call "asm" "%.S" "%.o");
     rule "archive: cclib .o -> .a archive"
       ~prod:"%(path:<**/>)lib%(libname:<*>).a"
       ~dep:"%(path)lib%(libname).cclib"
