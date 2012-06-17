@@ -42,6 +42,7 @@ module Util = struct
     let run_and_read x = List.hd (split_nl (Ocamlbuild_pack.My_unix.run_and_read x))
 end
 
+(* XXX this wont work with a custom ocamlc not on the path *)
 let ocaml_libdir = Util.run_and_read "ocamlc -where"
 
 (* Configuration rules for packages *)
@@ -53,85 +54,93 @@ module Configure = struct
       eprintf "_config/%s not found: run ./configure first\n%!" x;
       exit 1
 
+  (* Read a config file as a shell fragment to be appended directly *)
+  let config_sh x = Sh (String.concat " " (config x))
+
   (* Test to see if a flag file exists *)
   let test_flag x = Sys.file_exists (sprintf "%s/_config/flag.%s" Pathname.pwd x)
   let opt_flag fn a = if test_flag "opt" then List.map fn a else []
   let natdynlink_flag fn a = if test_flag "natdynlink" then opt_flag fn a else []
 
-  (* Preprocessor flags for syntax extensions *)
+  (* Flags for building and using syntax extensions *)
   let ppflags () =
-    let camlp4o flags = S ((List.map (fun x -> A x) flags)) in
-    (* Include the camlp4 flags to build an extension *)
-    flag ["ocaml";"pp";"build_syntax"] & (camlp4o (config "syntax.build"));
     (* Syntax extensions for the libraries being built *)
-    let flags = config "syntax.deps" in
-    if List.length flags > 0 then flag ["ocaml";"pp"] & (camlp4o flags);
-    (* Extra extensions for test files from the extension just built *)
-    match flags @ (config "syntax.test") with
-    |[] -> ()
-    |tflags ->
-      flag ["ocaml"; "pp"; "build_test"] & (camlp4o tflags);
-      dep ["ocaml"; "ocamldep"; "build_test"] & (config "syntax.test")
-
-  let flags () =
-    (* Include path for dependencies *)
-    let oincs = List.map (fun x -> Sh x) (config "flags.inc") in
-    flag ["ocaml"; "ocamldep"] & S oincs;
-    flag ["ocaml"; "compile"] & S oincs;
+    flag ["ocaml"; "pp"] & S [config_sh "syntax.deps"];
+    (* Include the camlp4 flags to build an extension *)
+    flag ["ocaml"; "pp"; "build_syntax"] & S [config_sh "syntax.build"];
     (* NOTE: we cannot use the built-in use_camlp4, as that forces
      * camlp4lib.cma to be linked with the mllib target, which results
      * in a non-functioning extension as it will be loaded twice.
      * So this simply includes the directory, which leads to a working archive *) 
     let p4incs = [A"-I"; A"+camlp4"] in
     flag ["ocaml"; "ocamldep"; "build_syntax"] & S p4incs;
-    flag ["ocaml"; "compile"; "build_syntax"] & S p4incs;
-    (* For the test libraries, include the just-built library path *)
-    List.iter (ocaml_lib ~tag_name:"build_test" ~dir:"lib") (config "lib.built");
-    let to_p x = List.map (fun x -> P x) (config x) in
-    dep ["ocaml"; "native"; "build_test"] (config "lib.built.native");
-    dep ["ocaml"; "byte"; "build_test"] (config "lib.built.byte");
-    flag ["ocaml"; "link"; "native"; "build_test"] & S(to_p "archives.native");
-    flag ["ocaml"; "link"; "byte"; "build_test"] & S(to_p "archives.byte");
-    (* Include the -cclib for any bindings being built *)
-    let ccinc libs = (A"-ccopt")::(A"-Lruntime"):: 
-      (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) libs)) in
-    let clibs_files = List.map (sprintf "runtime/lib%s.n.a") (config "clibs") in
-    let clibs_libname = ccinc (List.map (sprintf "%s.n") (config "clibs")) in
+    flag ["ocaml"; "compile"; "build_syntax"] & S p4incs
+ 
+  (* General flags for building libraries and binaries *)
+  let libflags () =
+    (* Include path for dependencies *)
+    flag ["ocaml"; "ocamldep"] & S [config_sh "flags.ocaml"];
+    flag ["ocaml"; "compile"] & S [config_sh "flags.ocaml"];
+    (* Include the -cclib for any C bindings being built *)
+    let ccinc = (A"-ccopt")::(A"-Lruntime"):: 
+      (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) (config "clibs"))) in
+    let clibs_files = List.map (sprintf "runtime/lib%s.a") (config "clibs") in
     dep ["link"; "library"; "ocaml"] clibs_files;
-    flag ["link"; "library"; "ocaml"; "byte"] & S clibs_libname;
-    flag ["link"; "library"; "ocaml"; "native"] & S clibs_libname
+    flag ["link"; "library"; "ocaml"; "byte"] & S ccinc;
+    flag ["link"; "library"; "ocaml"; "native"] & S ccinc
+
+  (* Flags for building test binaries, which include just-built extensions and libs *)
+  let testflags () =
+    List.iter (ocaml_lib ~tag_name:"use_lib" ~dir:"lib") (List.map ((^)"lib/") (config "lib"));
+    (* The test binaries also depend on the just-built libraries *)
+    let lib_nc = List.map (fun x -> "lib/"^x-.-"cmxa") (config "lib") in
+    let lib_bc = List.map (fun x -> "lib/"^x-.-"cma") (config "lib") in
+    dep ["ocaml"; "native"; "use_lib"] lib_nc;
+    dep ["ocaml"; "byte"; "use_lib"] lib_bc;
+    let lib_nc_sh = config_sh "archives.native" :: (List.map (fun x -> P x) lib_nc) in
+    let lib_bc_sh = config_sh "archives.byte" :: (List.map (fun x -> P x) lib_bc) in
+    flag ["ocaml"; "link"; "native"; "program"] & S lib_nc_sh;
+    flag ["ocaml"; "link"; "byte"; "program"] & S lib_bc_sh;
+    (* TODO gen native syntax.deps *)
+    let syntax_bc = List.map (sprintf "syntax/%s.cma") (config "syntax") in
+    let syntax_bc_use = List.map (fun x -> P x) syntax_bc in
+    flag ["ocaml"; "pp"; "use_syntax"] & S (config_sh "syntax.deps" :: syntax_bc_use);
+    dep ["ocaml"; "ocamldep"; "use_syntax"] syntax_bc
+
+  let flags () =
+    ppflags ();
+    libflags ();
+    testflags ()
+
+  let ocamlfind_meta env builder =
+    ()
 
   (* Create an .all target based on _config flags *)
   let rules () =
-    rule "build all targets: %.all contains what was built"
-      ~prods:["%.all"; "%.n.all"; "%.d.all"; "%.p.all"]
+    rule "build all targets: %.all contains what was built" ~prod:"%.all"
       (fun env builder ->
-         (* Calculate build outputs for lib/ *)
-         let build_lib ~byte ?native ?natdynlink () =
-           let libs = config "lib.built" in
-           let byte = List.flatten (List.map (fun lib -> List.map (fun e->lib^e) byte) libs) in
-           let native = match native with None -> []
-             |Some n -> if test_flag "opt" then List.map (fun x -> x^n) libs else [] in
-           let natdynlink = match natdynlink with None -> []
-             |Some n -> if test_flag "natdynlink" then List.map (fun x -> x^n) libs else [] in
-           byte @ native @ natdynlink in
-         let libs = build_lib ~byte:[".cmi";".cma"] ~native:".cmxa" ~natdynlink:".cmxs" () in
-         (* Build runtime libs *)
-         let runtimes = List.flatten (List.map (fun x ->
-          [(sprintf "runtime/lib%s.n.a" x);(sprintf "runtime/lib%s.d.a" x)]) (config "clibs")) in
-         (* Build syntax extensions *)
-         let syntaxes =
-           let syn = config "syntax" in
-           let bc = List.map (fun x -> sprintf "syntax/%s.cma" x) syn in
-           let nc = opt_flag (fun x -> sprintf "syntax/%s.cmxa" x) syn in
-           let ncs = natdynlink_flag (fun x -> sprintf "syntax/%s.cmxs" x) syn in
-           bc @ nc @ ncs in
-         (* Execute the rules*) 
-         let build ?(pre="") targs =
-           let out = List.map Outcome.good (builder (List.map (fun x -> [x]) targs)) in
-           Echo ((List.map (fun x -> x^"\n") out), (env "%"^pre^".all")) in
-         let all = libs @ runtimes @ syntaxes in
-         Seq [ (build all) ]
+        let build_lib ~byte ?native ?natdynlink () =
+          let libs = List.map ((^)"lib/") (config "lib") in
+          let byte = List.flatten (List.map (fun lib -> List.map (fun e->lib^e) byte) libs) in
+          let native = match native with None -> []
+            |Some n -> if test_flag "opt" then List.map (fun x -> x^n) libs else [] in
+          let natdynlink = match natdynlink with None -> []
+            |Some n -> if test_flag "natdynlink" then List.map (fun x -> x^n) libs else [] in
+          byte @ native @ natdynlink in
+        let libs = build_lib ~byte:[".cmi";".cma"] ~native:".cmxa" ~natdynlink:".cmxs" () in
+        (* Build runtime libs *)
+        let runtimes = List.map (sprintf "runtime/lib%s.a") (config "clibs") in
+        (* Build syntax extensions *)
+        let syntaxes =
+          let syn = config "syntax" in
+          let bc = List.map (fun x -> sprintf "syntax/%s.cma" x) syn in
+          let nc = opt_flag (fun x -> sprintf "syntax/%s.cmxa" x) syn in
+          let ncs = natdynlink_flag (fun x -> sprintf "syntax/%s.cmxs" x) syn in
+          bc @ nc @ ncs in
+        (* Execute the rules and echo everything built into the %.all file *) 
+        let targs = libs @ runtimes @ syntaxes in
+        let out = List.map Outcome.good (builder (List.map (fun x -> [x]) targs)) in
+        Echo ((List.map (fun x -> x^"\n") out), (env "%.all")) 
       )
 end
 
@@ -140,86 +149,38 @@ module CC = struct
 
   let cc = getenv "CC" ~default:"cc"
   let ar = getenv "AR" ~default:"ar"
-  let debug_cflags = ["-Wall"; "-g"; "-O1"]
-  let normal_cflags = ["-Wall"; "-O3"]
+  let cflags = getenv "CFLAGS" ~default:"-Wall -O2"
 
-  let cc_call ~tags ~flags dep prod env builder =
-    let tags = tags ++ "cc" in
+  let cc_call tags dep prod env builder =
+    let dep = env dep and prod = env prod in
+    let tags = tags_of_pathname dep++"cc"++"compile"++tags in 
+    let flags = [A"-c"; Sh cflags] in
     let inc = A (sprintf "-I%s/%s" Pathname.pwd (Filename.dirname dep)) in
     Cmd (S (A cc :: inc :: flags @ [T tags; A"-o"; Px prod; P dep]))
 
-  let cc_archive ~mode clib a path env builder =
+  let cc_archive clib a path env builder =
     let clib = env clib and a = env a and path = env path in
     let objs = List.map (fun x -> path / x) (string_list_of_file clib) in
-    let objs = List.map (fun x -> (Filename.chop_extension x) ^ ("."^mode ^ ".o")) objs in
+    let objs = List.map (fun x -> (Filename.chop_extension x)^".o") objs in
     let objs = List.map Outcome.good (builder (List.map (fun x -> [x]) objs)) in
     Cmd(S[A ar; A"rc"; Px a; T(tags_of_pathname a++"c"++"archive"); atomize objs])
 
-  let register_c_mode ~mode ~descr ~fn =
-    let prod = sprintf "%%.%s.o" mode in
-    rule (sprintf "cc: .c -> %s (%s)" prod descr)
-      ~prod ~deps:["%.c"] (*; "%.c.deps"] *)
-      (fun env builder ->
-         let dep = env "%.c" in
-         let prod = env prod in
-         let tags = tags_of_pathname (env dep) ++ "c" in 
-         fn tags dep prod env builder
-      );
-    rule (sprintf "cc: .S -> %s (%s)" prod descr)
-     ~prod ~dep:"%.S"
-     (fun env builder ->
-         let dep = env "%.S" in
-         let prod = env prod in
-         let tags = tags_of_pathname (env dep) ++ "asm" in 
-         fn tags dep prod env builder
-     );
-    rule (sprintf "archive: cclib %s.o -> %s.a archive" mode mode)
-      ~prod:(sprintf "%%(path:<**/>)lib%%(libname:<*>).%s.a" mode)
+  let rules () = 
+    rule "cc: %.c -> %.o" ~prod:"%.o" ~dep:"%.c" (cc_call "c" "%.c" "%.o");
+    rule "cc: %.S -> %.o" ~prod:"%.o" ~dep:"%.c" (cc_call "asm" "%.S" "%.o");
+    rule "archive: cclib .o -> .a archive"
+      ~prod:"%(path:<**/>)lib%(libname:<*>).a"
       ~dep:"%(path)lib%(libname).cclib"
-      (cc_archive ~mode "%(path)lib%(libname).cclib" (sprintf "%%(path)lib%%(libname).%s.a" mode) "%(path)")
-
-  let () =
-    let debug_fn tags dep prod env builder =
-      let tags = tags ++ "compile" in
-      let flags = List.map (fun x -> A x) ("-c" :: debug_cflags) in
-      cc_call ~tags ~flags dep prod env builder in
-    let normal_fn tags dep prod env builder =
-      let tags = tags ++ "compile" in
-      let flags = List.map (fun x -> A x) ("-c" :: normal_cflags) in
-      cc_call ~tags ~flags dep prod env builder in
-    register_c_mode ~mode:"d" ~descr:"debug" ~fn:debug_fn;
-    register_c_mode ~mode:"n" ~descr:"normal" ~fn:normal_fn
-
-  let rules () =
-    rule "cc: .c -> .c.deps.raw (raw gcc dependency list)"
-      ~prod:"%.c.deps.raw" ~dep:"%.c"
-      (fun env builder ->
-        let prod = env "%.c.deps.raw" in
-        let dep = env "%.c" in
-        let flags = [A"-MM";] in
-        let tags = tags_of_pathname dep ++ "depend" in
-        cc_call ~tags ~flags dep prod env builder
-      );
-    rule "cc: .c.deps.raw -> .c.deps (dependency list excluding source)"
-      ~prod:"%.c.deps" ~dep:"%.c.deps.raw"
-      (fun env builder ->
-        let input = env "%.c.deps.raw" in
-        let output = env "%.c.deps" in
-        match string_list_of_file input with
-        |targ::src::deps ->
-           let deps = List.filter (fun x -> x <> "\\") deps in
-           let deps = List.map (fun x -> x ^ "\n") deps in
-           Echo (deps, output)
-        |_ -> failwith "error in dependency file .deps"
-      )
+      (cc_archive "%(path)lib%(libname).cclib" "%(path)lib%(libname).a" "%(path)")
 
   let flags () =
-     flag ["cc";"depend"; "build_runtime"] & S [A("-I"^ocaml_libdir)];
-     flag ["cc";"compile"; "build_runtime"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"depend"; "c"] & S [A("-I"^ocaml_libdir)];
+     flag ["cc";"compile"; "c"] & S [A("-I"^ocaml_libdir)];
      flag ["cc";"compile"; "asm"] & S [A"-D__ASSEMBLY__"]
 end
 
 (* Xen cross compilation *)
+(*
 module Xen = struct
   (* All the xen cflags for compiling against an embedded environment *)
   let xen_incs =
@@ -289,18 +250,15 @@ module Xen = struct
     flag ["ocaml_asmrun"] & S[A"-DNATIVE_CODE"];
     flag ["ocaml_byterun"] & S[A"-DBYTE_CODE"]
 end
-
+*)
 let _ = Options.make_links := false;;
 
 let _ = dispatch begin function
   | Before_rules ->
+     Configure.rules ();
      CC.rules ();
-     Xen.rules ();
   | After_rules ->
-     CC.flags ();
-     Xen.flags ();
-     Configure.ppflags ();
      Configure.flags ();
-     Configure.rules ()
+     CC.flags ();
   | _ -> ()
 end
