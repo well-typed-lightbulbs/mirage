@@ -22,9 +22,6 @@ open Ocamlbuild_pack.Ocaml_utils
 open Ocamlbuild_pack.Tools
 open Printf
 
-let ps = Printf.sprintf
-let ep = Printf.eprintf
-
 (* Utility functions (e.g. to execute a command and return lines read) *)
 module Util = struct
   let split s ch =
@@ -112,9 +109,6 @@ module Configure = struct
     ppflags ();
     libflags ();
     testflags ()
-
-  let ocamlfind_meta env builder =
-    ()
 
   (* Create an .all target based on _config flags *)
   let rules () =
