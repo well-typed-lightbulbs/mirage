@@ -3,6 +3,13 @@
 
 OS=`uname -s`
 
+CFLAGS=${CFLAGS:--Wall -O3}
+case `uname -m` in
+x86_64)
+  CFLAGS="${CFLAGS} -fPIC"
+  ;;
+esac
+
 case "$OS" in
 Darwin)
   ln -nsf tap_stubs_macosx.c runtime/tap_stubs_os.c

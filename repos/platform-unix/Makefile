@@ -1,11 +1,8 @@
 .PHONY: all clean depend install
 
-all: depend
-	./cmd configure
+all:
+	./cmd configure unix
 	./cmd build
-
-depend:
-	@./configure.arch
 
 install:
 	./cmd install
