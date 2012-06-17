@@ -208,5 +208,7 @@ let _ = dispatch begin function
   | After_rules ->
      Configure.flags ();
      CC.flags ();
+     (* Required to repack sub-packs (like Pa_css) into Pa_mirage *)
+     pflag ["ocaml"; "pack"] "for-repack" (fun param -> S [A "-for-pack"; A param]);
   | _ -> ()
 end
