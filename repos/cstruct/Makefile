@@ -1,9 +1,15 @@
-VERSION=0.2
+.PHONY: all clean
 
-LIBS = cstruct
-SYNTAX = cstruct-syntax
-RUNTIME_C = libcstruct
+all:
+	./cmd configure
+	./cmd build
 
-NAME = cstruct
+install:
+	./cmd install
 
-include Makefile.inc
+clean:
+	./cmd clean
+
+test: all
+	./cmd test
+	
