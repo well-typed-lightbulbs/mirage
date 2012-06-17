@@ -1,9 +1,18 @@
 #!/bin/sh -ex
 # Script that invokes ocamlbuild commands for various targets
 
+cmd=$1
+shift
+
+target=$1
+
 # source the package variables
 if [ -e "_vars" ]; then
   . ./_vars
+fi
+
+if [ -x "configure.os" ]; then
+  . ./configure.os ${target}
 fi
 
 OCAMLBUILD=${OCAMLBUILD:-ocamlbuild}
@@ -25,6 +34,8 @@ configure() {
   echo ${SYNTAX} > _config/syntax
   echo ${RUNTIME} > _config/clibs
   echo ${LIB} > _config/lib
+  echo ${CFLAGS} > _config/cflags
+  echo ${EXTRA} > _config/extra
   # TODO check ocamlopt is installed
   touch _config/flag.opt
   # TODO getopt parsing for this and implement various options
@@ -61,9 +72,6 @@ clean() {
   ${OCAMLBUILD} -clean
   rm -rf _config
 }
-
-cmd=$1
-shift
 
 case "$cmd" in
 conf*) configure ;;
