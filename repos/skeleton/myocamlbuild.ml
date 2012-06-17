@@ -113,13 +113,13 @@ module Configure = struct
   let rules () =
     rule "build all targets: %.all contains what was built" ~prod:"%.all"
       (fun env builder ->
-        let build_lib ~byte ~native ~natdynlink () =
+        let libs =
           let libs = List.map ((^)"lib/") (config "lib") in
-          let byte = List.flatten (List.map (fun lib -> List.map (fun e->lib^e) byte) libs) in
-          let native = if_opt (fun x -> x^native) libs in
-          let natdynlink = if_natdynlink (fun x -> x^natdynlink) libs in
-          byte @ native @ natdynlink in
-        let libs = build_lib ~byte:[".cmi";".cma"] ~native:".cmxa" ~natdynlink:".cmxs" () in
+          let interface = List.map (fun x -> x-.-"cmi") libs in
+          let byte = List.map (fun x -> x-.-"cma") libs in
+          let native = if_opt (fun x -> x-.-"cmxa") libs in
+          let natdynlink = if_natdynlink (fun x -> x-.-"cmxs") libs in
+          interface @ byte @ native @ natdynlink in
         (* Build runtime libs *)
         let runtimes = List.map (sprintf "runtime/lib%s.a") (config "clibs") in
         (* Build syntax extensions *)
