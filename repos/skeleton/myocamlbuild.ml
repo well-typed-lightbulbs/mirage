@@ -57,8 +57,8 @@ module Configure = struct
 
   (* Test to see if a flag file exists *)
   let test_flag x = Sys.file_exists (sprintf "%s/_config/flag.%s" Pathname.pwd x)
-  let opt_flag fn a = if test_flag "opt" then List.map fn a else []
-  let natdynlink_flag fn a = if test_flag "natdynlink" then opt_flag fn a else []
+  let if_opt fn a = if test_flag "opt" then List.map fn a else []
+  let if_natdynlink fn a = if test_flag "opt" && test_flag "natdynlink" then List.map fn a else []
 
   (* Flags for building and using syntax extensions *)
   let ppflags () =
@@ -84,8 +84,7 @@ module Configure = struct
       (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) (config "clibs"))) in
     let clibs_files = List.map (sprintf "runtime/lib%s.a") (config "clibs") in
     dep ["link"; "library"; "ocaml"] clibs_files;
-    flag ["link"; "library"; "ocaml"; "byte"] & S ccinc;
-    flag ["link"; "library"; "ocaml"; "native"] & S ccinc
+    flag ["link"; "library"; "ocaml"] & S ccinc
 
   (* Flags for building test binaries, which include just-built extensions and libs *)
   let testflags () =
@@ -114,13 +113,11 @@ module Configure = struct
   let rules () =
     rule "build all targets: %.all contains what was built" ~prod:"%.all"
       (fun env builder ->
-        let build_lib ~byte ?native ?natdynlink () =
+        let build_lib ~byte ~native ~natdynlink () =
           let libs = List.map ((^)"lib/") (config "lib") in
           let byte = List.flatten (List.map (fun lib -> List.map (fun e->lib^e) byte) libs) in
-          let native = match native with None -> []
-            |Some n -> if test_flag "opt" then List.map (fun x -> x^n) libs else [] in
-          let natdynlink = match natdynlink with None -> []
-            |Some n -> if test_flag "natdynlink" then List.map (fun x -> x^n) libs else [] in
+          let native = if_opt (fun x -> x^native) libs in
+          let natdynlink = if_natdynlink (fun x -> x^natdynlink) libs in
           byte @ native @ natdynlink in
         let libs = build_lib ~byte:[".cmi";".cma"] ~native:".cmxa" ~natdynlink:".cmxs" () in
         (* Build runtime libs *)
@@ -129,8 +126,8 @@ module Configure = struct
         let syntaxes =
           let syn = config "syntax" in
           let bc = List.map (fun x -> sprintf "syntax/%s.cma" x) syn in
-          let nc = opt_flag (fun x -> sprintf "syntax/%s.cmxa" x) syn in
-          let ncs = natdynlink_flag (fun x -> sprintf "syntax/%s.cmxs" x) syn in
+          let nc = if_opt (fun x -> sprintf "syntax/%s.cmxa" x) syn in
+          let ncs = if_natdynlink (fun x -> sprintf "syntax/%s.cmxs" x) syn in
           bc @ nc @ ncs in
         (* Execute the rules and echo everything built into the %.all file *) 
         let targs = libs @ runtimes @ syntaxes in
