@@ -1,0 +1,4 @@
+NAME=net-direct
+VERSION=0.3dev
+DEPS="cstruct cstruct.syntax lwt lwt.syntax mirage-unix"
+LIB="net"
