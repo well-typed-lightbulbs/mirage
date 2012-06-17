@@ -1,8 +1,0 @@
-dietlibc/libdiet.xn.a
-libm/libm.xn.a
-kernel/libxen.xn.a
-kernel/libxencaml.xn.a
-ocaml/libocaml.xn.a
-ocaml/libocamlbc.xn.a
-kernel/longjmp.xn.o
-kernel/x86_64.xn.o

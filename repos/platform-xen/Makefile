@@ -1,5 +1,11 @@
-#TARGETS := runtime_xen/all.otarget
-LIBS := oS
-NAME=mirage-xen
+.PHONY: all clean depend install
 
-include Makefile.inc
+all: 
+	./cmd configure xen
+	./cmd build
+
+install:
+	./cmd install
+
+clean:
+	./cmd clean
