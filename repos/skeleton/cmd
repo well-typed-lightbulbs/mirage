@@ -1,4 +1,4 @@
-#!/bin/sh -ex
+#!/bin/sh -e
 # Script that invokes ocamlbuild commands for various targets
 
 # source the package variables
@@ -12,20 +12,18 @@ OCAMLBUILD_FLAGS=-classic-display
 # create entries in the _config/ directory 
 function configure {
   # initialise _config directory
-  rm -rf _config
-  mkdir -p _config
+  rm -rf _config && mkdir -p _config
   # _config/inc has -I flags
   ocamlfind query -r -i-format ${DEPS} > _config/flags.ocaml
   # _config/archives.* contains dependency archives for linking tests
   ocamlfind query -r -a-format -predicates native ${DEPS} > _config/archives.native
   ocamlfind query -r -a-format -predicates byte ${DEPS} > _config/archives.byte
-  # _config/built.runtime contains the archive files
-  echo ${RUNTIME} > _config/clibs
   # _config/pp has camlp4 flags for the library and binaries
   ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' ${DEPS} > _config/syntax.deps
   # _config/syntax has flags to build p4 extensions in syntax/
   ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' camlp4.quotations.o camlp4.lib camlp4.extend > _config/syntax.build
   echo ${SYNTAX} > _config/syntax
+  echo ${RUNTIME} > _config/clibs
   echo ${LIB} > _config/lib
   # TODO check ocamlopt is installed
   touch _config/flag.opt
@@ -43,9 +41,11 @@ function compile {
 function install {
   sed -e "s/@VERSION@/${VERSION}/g" < META.in > _config/META
   ocamlfind remove ${NAME} || true
-  # TODO DESTDIR and OCAMLFIND_FLAGS from environment
   t=`sed -e 's,^,_build/,g' < _build/${NAME}.all`
-  ocamlfind install ${NAME} _config/META ${t}
+  if [ ! -z "${DESTDIR}" ]; then
+    OCAMLFIND_FLAGS="${OCAMLFIND_FLAGS} -destdir ${DESTDIR}"
+  fi
+  ocamlfind install ${OCAMLFIND_FLAGS} ${NAME} _config/META ${t}
 }
 
 # tests also include the built syntax extensions (if any)
