@@ -54,7 +54,8 @@ module Configure = struct
       eprintf "_config/%s not found: run ./configure first\n%!" x;
       exit 1
 
-  (* Read a config file as a shell fragment to be appended directly *)
+  (* Read a config file as a shell fragment to be appended directly. Repeat
+   * lines are also filtered, but ordering preserved. *)
   let config_sh x = Sh (String.concat " " (config x))
 
   (* Test to see if a flag file exists *)
@@ -104,7 +105,7 @@ module Configure = struct
     (* TODO gen native syntax.deps *)
     let syntax_bc = List.map (sprintf "syntax/%s.cma") (config "syntax") in
     let syntax_bc_use = List.map (fun x -> P x) syntax_bc in
-    flag ["ocaml"; "pp"; "use_syntax"] & S (config_sh "syntax.deps" :: syntax_bc_use);
+    flag ["ocaml"; "pp"; "use_syntax"] & S syntax_bc_use;
     dep ["ocaml"; "ocamldep"; "use_syntax"] syntax_bc
 
   let flags () =
@@ -179,78 +180,6 @@ module CC = struct
      flag ["cc";"compile"; "asm"] & S [A"-D__ASSEMBLY__"]
 end
 
-(* Xen cross compilation *)
-(*
-module Xen = struct
-  (* All the xen cflags for compiling against an embedded environment *)
-  let xen_incs =
-    (* base GCC standard include dir *)
-    let gcc_install =
-      let cmd = ps "LANG=C %s -print-search-dirs | sed -n -e 's/install: \\(.*\\)/\\1/p'" CC.cc in
-      let dir = Util.run_and_read cmd in
-      Filename.concat dir "include" in
-    (* root dir of xen bits *)
-    let rootdir = ps "%s/runtime_xen" Pathname.pwd in
-    let root_incdir = ps "%s/include" rootdir in
-    (* Basic cflags *)
-    let all_cflags = List.map (fun x -> A x)
-      [ "-U"; "__linux__"; "-U"; "__FreeBSD__";
-	"-U"; "__sun__"; "-D__MiniOS__";
-	"-D__MiniOS__"; "-D__x86_64__";
-	"-D__XEN_INTERFACE_VERSION__=0x00030205";
-	"-D__INSIDE_MINIOS__";
-	"-nostdinc"; "-std=gnu99"; "-fno-stack-protector";
-	"-m64"; "-mno-red-zone"; "-fno-reorder-blocks";
-	"-fstrict-aliasing"; "-momit-leaf-frame-pointer"; "-mfancy-math-387"
-      ] in
-    (* Include dirs *)
-    let incdirs= A ("-I"^gcc_install) :: List.flatten (
-      List.map (fun x ->[A"-isystem"; A (ps "%s/%s" root_incdir x)])
-	[""; "mini-os"; "mini-os/x86"]) in
-    all_cflags @ incdirs
-
-  (* The private libm include dir *)
-  let libm_incs = [ A (ps "-I%s/runtime_xen/libm" Pathname.pwd) ]
-
-  (* defines used by the ocaml runtime, as well as includes *)
-  let debug = false
-  let ocaml_debug_inc = if debug then [A "-DDEBUG"] else []
-  let ocaml_incs = [
-    A "-DCAML_NAME_SPACE"; A "-DTARGET_amd64"; A "-DSYS_xen";
-    A (ps "-I%s/runtime_xen/ocaml" Pathname.pwd) ] @ ocaml_debug_inc
-
-  let ocaml_asmrun = [ A"-DNATIVE_CODE" ]
-  let ocaml_byterun = [ ]
-
-  (* dietlibc bits, mostly extra warnings *)
-  let dietlibc_incs = [
-    A "-Wextra"; A "-Wchar-subscripts"; A "-Wmissing-prototypes";
-    A "-Wmissing-declarations"; A "-Wno-switch"; A "-Wno-unused"; 
-    A "-Wredundant-decls"; A "-D__dietlibc__";
-    A (ps "-I%s/runtime_xen/dietlibc" Pathname.pwd)
-  ]
-
-  let rules () =
-    let xen_cflags = xen_incs @ dietlibc_incs in
-    let xen_fn ~cflags tags dep prod env builder =
-      let tags = tags ++ "compile" ++ "xen" in
-      let flags = A"-c" :: xen_cflags @ (List.map (fun x -> A x) cflags) in
-      CC.cc_call ~tags ~flags dep prod env builder in
-    CC.register_c_mode ~mode:"xn" ~descr:"xen normal" ~fn:(xen_fn ~cflags:CC.normal_cflags);
-    CC.register_c_mode ~mode:"xd" ~descr:"xen debug" ~fn:(xen_fn ~cflags:CC.debug_cflags);
-    (* Custom rule to copy an ocaml file to .nc.c or .bc.c for native/bytecode *)
-    rule "cc: .nc.c -> .c"
-      ~prod:"%.nc.c" ~dep:"%.c"
-      (fun env _ -> cp (env "%.c") (env "%.nc.c"));
-    rule "cc: .bc.c -> .c"
-      ~prod:"%.bc.c" ~dep:"%.c"
-      (fun env _ -> cp (env "%.c") (env "%.bc.c"))
-
-  let flags () =
-    flag ["ocaml_asmrun"] & S[A"-DNATIVE_CODE"];
-    flag ["ocaml_byterun"] & S[A"-DBYTE_CODE"]
-end
-*)
 let _ = Options.make_links := false;;
 
 let _ = dispatch begin function
