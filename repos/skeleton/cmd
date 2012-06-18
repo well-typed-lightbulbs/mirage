@@ -1,6 +1,8 @@
 #!/bin/sh -ex
 # Script that invokes ocamlbuild commands for various targets
 
+njobs=8
+
 cmd=$1
 shift
 
@@ -16,7 +18,7 @@ if [ -x "configure.os" ]; then
 fi
 
 OCAMLBUILD=${OCAMLBUILD:-ocamlbuild}
-OCAMLBUILD_FLAGS=-classic-display
+OCAMLBUILD_FLAGS="-classic-display -j ${njobs}"
 
 # create entries in the _config/ directory 
 configure() {
