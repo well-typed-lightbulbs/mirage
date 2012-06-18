@@ -3,6 +3,7 @@ description = "Syntax extension to map C structs onto Bigarray buffers"
 archive(byte) = "cstruct.cma"
 archive(native) = "cstruct.cmxa"
 exists_if = "cstruct.cma"
+requires = "bigarray"
 package "syntax" (
  description = "Syntax extension for cstruct"
  requires = "camlp4"
