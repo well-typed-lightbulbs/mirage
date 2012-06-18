@@ -1,5 +1,5 @@
 NAME=mirage
 VERSION=0.3dev
 DEPS="cstruct cstruct.syntax lwt lwt.syntax"
-EXTRA="runtime/dietlibc/libdiet.a runtime/libm/libm.a runtime/kernel/libxen.a runtime/kernel/libxencaml.a runtime/ocaml/libocaml.a"
+EXTRA="runtime/dietlibc/libdiet.a runtime/libm/libm.a runtime/kernel/libxen.a runtime/kernel/libxencaml.a runtime/ocaml/libocaml.a runtime/kernel/mirage-x86_64.lds"
 LIB="oS"

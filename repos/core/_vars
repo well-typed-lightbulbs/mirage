@@ -1,0 +1,3 @@
+NAME=test
+VERSION=0.3dev
+DEPS="mirage"
