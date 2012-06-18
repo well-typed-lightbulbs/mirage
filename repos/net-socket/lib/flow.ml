@@ -55,14 +55,6 @@ let close_on_exit t fn =
     close t >>
     fail exn
 
-let id = new_key ()
-let new_id () = Some (Oo.id (object end))
-let () =
-  Log.set_id (fun () ->
-    match get id with
-      | None    -> 0
-      | Some id -> id)
-
 let listen_tcpv4 addr port fn =
   lwt fd = match R.tcpv4_bind (ipv4_addr_to_uint32 addr) port with
     |R.OK fd -> return fd
@@ -71,26 +63,24 @@ let listen_tcpv4 addr port fn =
   match R.tcpv4_listen fd with
   |R.OK () ->
     let rec loop t =
-      with_value id (new_id ()) (fun () ->
-        (match R.tcpv4_accept fd with
-         |R.OK (afd,caddr_i,cport) ->
-           let caddr = ipv4_addr_of_uint32 caddr_i in
-           let t' = t_of_fd afd in
-           (* Be careful to catch an exception here, as otherwise
-              ignore_result may raise it at some other random point *)
-           Lwt.ignore_result (
-             close_on_exit t' (fun t ->
-               try_lwt
-                fn (caddr, cport) t
-               with exn ->
-                return (Printf.printf "EXN: %s\n%!" (Printexc.to_string exn))
-             )
-           );
-           loop t
-         |R.Retry -> Activations.read t.fd >> loop t
-         |R.Err err -> fail (Accept_error err)
-        )
-      ) in
+      match R.tcpv4_accept fd with
+      |R.OK (afd,caddr_i,cport) ->
+        let caddr = ipv4_addr_of_uint32 caddr_i in
+        let t' = t_of_fd afd in
+        (* Be careful to catch an exception here, as otherwise
+           ignore_result may raise it at some other random point *)
+        Lwt.ignore_result (
+          close_on_exit t' (fun t ->
+            try_lwt
+              fn (caddr, cport) t
+            with exn ->
+              return (Printf.printf "EXN: %s\n%!" (Printexc.to_string exn))
+          )
+        );
+        loop t
+      |R.Retry -> Activations.read t.fd >> loop t
+      |R.Err err -> fail (Accept_error err)
+    in
     let t = t_of_fd fd in
     let listen_t = close_on_exit t loop in
     t.abort_t <?> listen_t
