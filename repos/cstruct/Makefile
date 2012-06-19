@@ -1,15 +1,13 @@
-.PHONY: all clean
+OS ?= unix
+
+.PHONY: all clean install test
+.DEFAULT: all
 
 all:
-	./cmd configure
-	./cmd build
-
-install:
-	./cmd install
-
+	cd $(OS) && $(MAKE) all
 clean:
-	./cmd clean
-
-test: all
-	./cmd test
-	
+	cd $(OS) && $(MAKE) clean
+install:
+	cd $(OS) && $(MAKE) install
+test:
+	cd $(OS) && $(MAKE) test
