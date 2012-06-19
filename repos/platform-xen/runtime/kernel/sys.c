@@ -35,6 +35,7 @@
 #include <net/if.h>
 #include <time.h>
 #include <errno.h>
+#include <err.h>
 #include <fcntl.h>
 #include <assert.h>
 #include <dirent.h>
@@ -161,6 +162,11 @@ ssize_t write(int fd, const void *buf, size_t nbytes)
     return nbytes;
 }
 
+char *getenv(const char *v)
+{
+  return NULL;
+}
+ 
 /* Not supported by FS yet.  */
 unsupported_function_crash(link);
 unsupported_function(int, readlink, -1);
@@ -177,6 +183,9 @@ unsupported_function_crash(umask);
 unsupported_function_crash(getcwd);
 unsupported_function_crash(fcntl);
 unsupported_function_crash(rename);
+unsupported_function_crash(system);
+unsupported_function_crash(times);
+unsupported_function_crash(sysconf);
 
 /* We could support that.  */
 unsupported_function_log(int, chdir, -1);

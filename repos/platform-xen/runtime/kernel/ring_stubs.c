@@ -105,7 +105,7 @@ struct sring {
 };
 
 /* see ring.ml:type sring */
-#define SRING_VAL(x) ((struct sring *)(Data_bigarray_val(Field(x, 0))))
+#define SRING_VAL(x) ((struct sring *)(Caml_ba_data_val(Field(x, 0))))
 CAMLprim value
 caml_sring_rsp_prod(value v_sring)
 {

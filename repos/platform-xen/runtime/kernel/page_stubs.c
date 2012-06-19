@@ -39,7 +39,7 @@ caml_alloc_pages(value n_pages)
   /* Align to a page boundary */
   block = PAGE_ALIGN(block);
   while (i < len){
-    page = alloc_bigarray_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT | CAML_BA_MANAGED, 1, block, (long)PAGE_SIZE);
+    page = caml_ba_alloc_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT | CAML_BA_MANAGED, 1, block, (long)PAGE_SIZE);
     Store_field(result, i, page);
     i++;
     block += (PAGE_SIZE / sizeof(unsigned long));

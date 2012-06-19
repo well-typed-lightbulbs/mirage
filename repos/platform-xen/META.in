@@ -1,10 +1,5 @@
 version = "@VERSION@"
 description = "Mirage Xen platform"
-archive(byte) = "cstruct.cma oS.cma"
-archive(native) = "cstruct.cmxa oS.cmxa"
+archive(byte) = "bigarray.cma cstruct.cma oS.cma"
+archive(native) = "bigarray.cmxa cstruct.cmxa oS.cmxa"
 requires = "cstruct.syntax lwt lwt.syntax"
-package "bigarray" {
-  description = "Platform-independent bigarray"
-  archive(byte) = "bigarray.cma"
-  archive(native) = "bigarray.cmx"
-}
