@@ -17,7 +17,8 @@ if [ -x "configure.os" ]; then
   . ./configure.os ${target}
 fi
 
-OCAMLBUILD=${OCAMLBUILD:-ocamlbuild}
+OCAMLBUILD=${OCAMLBUILD:-`which ocamlbuild`}
+OCAMLFIND=${OCAMLFIND:-`which ocamlfind`}
 OCAMLBUILD_FLAGS="-classic-display -j ${njobs}"
 
 # create entries in the _config/ directory 
@@ -25,14 +26,14 @@ configure() {
   # initialise _config directory
   rm -rf _config && mkdir -p _config
   # _config/inc has -I flags
-  ocamlfind query -r -i-format ${DEPS} > _config/flags.ocaml
+  ${OCAMLFIND} query -r -i-format ${DEPS} > _config/flags.ocaml
   # _config/archives.* contains dependency archives for linking tests
-  ocamlfind query -r -a-format -predicates native ${DEPS} > _config/archives.native
-  ocamlfind query -r -a-format -predicates byte ${DEPS} > _config/archives.byte
+  ${OCAMLFIND} query -r -a-format -predicates native ${DEPS} > _config/archives.native
+  ${OCAMLFIND} query -r -a-format -predicates byte ${DEPS} > _config/archives.byte
   # _config/pp has camlp4 flags for the library and binaries
-  ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' ${DEPS} ${SYNTAX_DEPS} > _config/syntax.deps
+  ${OCAMLFIND} query -r -predicates syntax,preprocessor -format '-I %d %A' ${DEPS} ${SYNTAX_DEPS} > _config/syntax.deps
   # _config/syntax has flags to build p4 extensions in syntax/
-  ocamlfind query -r -predicates syntax,preprocessor -format '-I %d %A' camlp4.quotations.o camlp4.lib camlp4.extend > _config/syntax.build
+  ${OCAMLFIND} query -r -predicates syntax,preprocessor -format '-I %d %A' camlp4.quotations.o camlp4.lib camlp4.extend > _config/syntax.build
   echo ${NAME} > _config/name
   echo ${DEPS} > _config/deps
   echo ${SYNTAX} > _config/syntax
@@ -52,15 +53,15 @@ compile() {
   ${OCAMLBUILD} ${OCAMLBUILD_FLAGS} ${NAME}.all
 }
 
-# generate META file and invoke ocamlfind installation
+# generate META file and invoke ${OCAMLFIND} installation
 install()  {
   sed -e "s/@VERSION@/${VERSION}/g" < META.in > _config/META
-  ocamlfind remove ${NAME} || true
+  ${OCAMLFIND} remove ${NAME} || true
   t=`sed -e 's,^,_build/,g' < _build/${NAME}.all`
   if [ ! -z "${DESTDIR}" ]; then
     OCAMLFIND_FLAGS="${OCAMLFIND_FLAGS} -destdir ${DESTDIR}"
   fi
-  ocamlfind install ${OCAMLFIND_FLAGS} ${NAME} _config/META ${t}
+  ${OCAMLFIND} install ${OCAMLFIND_FLAGS} ${NAME} _config/META ${t}
 }
 
 # tests also include the built syntax extensions (if any)
