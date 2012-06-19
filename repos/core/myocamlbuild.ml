@@ -203,9 +203,9 @@ module CC = struct
 end
 
 module Xen = struct
+  let xenlib = Util.run_and_read "ocamlfind query mirage"
   (** Link to a standalone Xen microkernel *)
   let cc_xen_link bc tags arg out env =
-    let xenlib = List.hd (Configure.config "dir.mirage") in
     let jmp_obj = Px (xenlib / "longjmp.o") in
     let head_obj = Px (xenlib / "x86_64.o") in
     let ocamllib = match bc with |true -> "ocamlbc" |false -> "ocaml" in
