@@ -105,6 +105,7 @@ module Configure = struct
     (* Include path for dependencies *)
     flag ["ocaml"; "ocamldep"] & S [config_sh "flags.ocaml"];
     flag ["ocaml"; "compile"] & S [config_sh "flags.ocaml"];
+    flag ["ocaml"; "link"] & S [config_sh "flags.ocaml"];
     (* Include the -cclib for any C bindings being built *)
     let ccinc = (A"-ccopt")::(A"-Lruntime"):: 
       (List.flatten (List.map (fun x -> [A"-cclib"; A("-l"^x)]) (config "clibs"))) in
@@ -124,6 +125,8 @@ module Configure = struct
     let lib_bc_sh = config_sh "archives.byte" :: (List.map (fun x -> P x) lib_bc) in
     flag ["ocaml"; "link"; "native"; "program"] & S lib_nc_sh;
     flag ["ocaml"; "link"; "byte"; "program"] & S lib_bc_sh;
+    flag ["ocaml"; "link"; "native"; "output_obj"] & S lib_nc_sh;
+    flag ["ocaml"; "link"; "byte"; "output_obj"] & S lib_bc_sh;
     (* TODO gen native syntax.deps *)
     let syntax_bc = List.map (sprintf "syntax/%s.cma") (config "syntax") in
     let syntax_bc_use = List.map (fun x -> P x) syntax_bc in
@@ -144,9 +147,8 @@ module Configure = struct
           let interface = List.map (fun x -> x-.-"cmi") libs in
           let byte = List.map (fun x -> x-.-"cma") libs in
           let native = if_opt (fun x -> x-.-"cmxa") libs in
-          let native_lib = if_opt (fun x -> x-.-"a") libs in
           let natdynlink = if_natdynlink (fun x -> x-.-"cmxs") libs in
-          interface @ byte @ native @ native_lib @ natdynlink in
+          interface @ byte @ native @ natdynlink in
         (* Build runtime libs *)
         let runtimes = List.map (sprintf "runtime/lib%s.a") (config "clibs") in
         (* Build syntax extensions *)
@@ -186,18 +188,89 @@ module CC = struct
     let objs = List.map Outcome.good (builder (List.map (fun x -> [x]) objs)) in
     Cmd(S[A ar; A"rc"; Px a; T(tags_of_pathname a++"c"++"archive"); atomize objs])
 
+  (** Copied from ocaml/ocamlbuild/ocaml_specific.ml and modified to add
+      the output_obj tag *)
+  let native_output_obj x =
+    link_gen "cmx" "cmxa" !Options.ext_lib [!Options.ext_obj; "cmi"]
+       ocamlopt_link_prog
+      (fun tags -> tags++"ocaml"++"link"++"native"++"output_obj") x
+
+  let bytecode_output_obj x =
+    link_gen "cmo" "cma" !Options.ext_lib [!Options.ext_obj; "cmi"]
+       ocamlc_link_prog
+      (fun tags -> tags++"ocaml"++"link"++"byte"++"output_obj") x
+
   let rules () = 
     rule "cc: %.c -> %.o" ~prod:"%.o" ~dep:"%.c" (cc_call "c" "%.c" "%.o");
     rule "cc: %.S -> %.o" ~prod:"%.o" ~dep:"%.S" (cc_call "asm" "%.S" "%.o");
     rule "archive: cclib .o -> .a archive"
       ~prod:"%(path:<**/>)lib%(libname:<*>).a"
       ~dep:"%(path)lib%(libname).cclib"
-      (cc_archive "%(path)lib%(libname).cclib" "%(path)lib%(libname).a" "%(path)")
+      (cc_archive "%(path)lib%(libname).cclib" "%(path)lib%(libname).a" "%(path)");
+    (* Rule to link a module and output a standalone native object file *)
+    rule "ocaml: cmx* & o* -> .m.o"
+      ~prod:"%.m.o"
+      ~deps:["%.cmx"; "%.o"]
+      (native_output_obj "%.cmx" "%.m.o");
+    (* Rule to link a module and output a standalone bytecode C file *)
+    rule "ocaml: cmo* & o* -> .mb.c"
+      ~prod:"%.mb.c"
+      ~deps:["%.cmo"; "%.o"]
+      (bytecode_output_obj "%.cmo" "%.mb.c")
 
   let flags () =
      flag ["cc";"depend"; "c"] & S [A("-I"^ocaml_libdir)];
      flag ["cc";"compile"; "c"] & S [A("-I"^ocaml_libdir)];
      flag ["cc";"compile"; "asm"] & S [A"-D__ASSEMBLY__"]
+end
+
+module Xen = struct
+  (** Link to a standalone Xen microkernel *)
+  let cc_xen_link bc tags arg out env =
+    (* XXX check ocamlfind path here *)
+    let xenlib = Util.run_and_read "ocamlfind query mirage" in
+    let jmp_obj = Px (xenlib / "longjmp.o") in
+    let head_obj = Px (xenlib / "x86_64.o") in
+    let ocamllib = match bc with |true -> "ocamlbc" |false -> "ocaml" in
+    let ld = getenv ~default:"ld" "LD" in
+    let ldlibs = List.map (fun x -> Px (xenlib / ("lib" ^ x ^ ".a")))
+      [ocamllib; "xen"; "xencaml"; "diet"; "m"] in
+    Cmd (S ( A ld :: [ T(tags++"link"++"xen");
+      A"-d"; A"-nostdlib"; A"-m"; A"elf_x86_64"; A"-T";
+      Px (xenlib / "mirage-x86_64.lds");  head_obj; P arg ]
+      @ ldlibs @ [jmp_obj; A"-o"; Px out]))
+
+  let cc_xen_bc_link tags arg out env = cc_xen_link true tags arg out env
+  let cc_xen_nc_link tags arg out env = cc_xen_link false tags arg out env
+
+  (* Rewrite sections for Xen LDS layout *)
+  let xen_objcopy dst src env builder =
+    let dst = env dst in
+    let src = env src in
+    let cmd = ["objcopy";"--rename-section";".bss=.mlbss";"--rename-section";
+      ".data=.mldata";"--rename-section";".rodata=.mlrodata";
+      "--rename-section";".text=.mltext"] in
+    let cmds = List.map (fun x -> A x) cmd in
+    Cmd (S (cmds @ [Px src; Px dst]))
+
+  (** Generic CC linking rule that wraps both Xen and C *) 
+  let cc_link_c_implem ?tag fn c o env build =
+    let c = env c and o = env o in
+    fn (tags_of_pathname c++"implem"+++tag) c o env
+
+  let rules () =
+    (* Rule to rename module sections to ml* equivalents for the static vmem layout *)
+    rule "ocaml: .m.o -> .mx.o"
+      ~prod:"%.mx.o"
+      ~dep:"%.m.o"
+      (xen_objcopy "%.mx.o" "%.m.o");
+
+     (* Xen link rule *)
+    rule ("final link: %.mx.o -> %.xen")
+      ~prod:"%(file).xen"
+      ~dep:"%(file).mx.o"
+      (cc_link_c_implem cc_xen_nc_link "%(file).mx.o" "%(file).xen")
+
 end
 
 let _ = Options.make_links := false;;
@@ -209,6 +282,7 @@ let _ = dispatch begin function
   | After_rules ->
      Configure.flags ();
      CC.flags ();
+     Xen.rules ();
      (* Required to repack sub-packs (like Pa_css) into Pa_mirage *)
      pflag ["ocaml"; "pack"] "for-repack" (fun param -> S [A "-for-pack"; A param]);
   | _ -> ()
