@@ -1,9 +1,8 @@
 .PHONY: all clean depend install
 
-PREFIX ?= /usr/local
-INSTALLDIR := $(DESTDIR)$(PREFIX)
-INCLUDE := $(INSTALLDIR)/include/mirage
-XEN_INCLUDE := $(INCLUDE)/xen
+OCAMLFIND ?= ocamlfind
+
+XEN_INCLUDE = $(shell ocamlfind printconf path)/mirage/include/xen
 
 all: 
 	./cmd configure xen
