@@ -45,6 +45,7 @@ let backend_predicate = function
   | `Xen | `Qubes   -> "mirage_xen"
   | `Virtio | `Ukvm -> "mirage_solo5"
   | `Unix | `MacOSX -> "mirage_unix"
+  | `Esp32          -> "mirage_esp32"
 
 (** {2 Devices} *)
 let qrexec = job
@@ -147,10 +148,11 @@ let posix_clock_conf = object
   method ty = pclock
   method name = "pclock"
   method module_name = "Pclock"
-  method! packages =
-    Key.(if_ is_unix)
-      [ package ~min:"1.2.0" "mirage-clock-unix" ]
-      [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
+  method! packages = (* Hacky *)
+      Key.match_ Key.(value target) @@ function
+      | `Esp32          -> [ package "mirage-clock-esp32" ]
+      | `Unix | `MacOSX -> [ package ~min:"1.2.0" "mirage-clock-unix" ]
+      | _               -> [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
   method! connect _ modname _args = Fmt.strf "%s.connect ()" modname
 end
 
@@ -165,11 +167,13 @@ let monotonic_clock_conf = object
   method name = "mclock"
   method module_name = "Mclock"
   method! packages =
-    Key.(if_ is_unix)
-      [ package ~min:"1.2.0" "mirage-clock-unix" ]
-      [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
+      Key.match_ Key.(value target) @@ function
+      | `Esp32          -> [ package "mirage-clock-esp32" ]
+      | `Unix | `MacOSX -> [ package ~min:"1.2.0" "mirage-clock-unix" ]
+      | _               -> [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
   method! connect _ modname _args = Fmt.strf "%s.connect ()" modname
 end
+
 
 let default_monotonic_clock = impl monotonic_clock_conf
 
@@ -236,11 +240,15 @@ let nocrypto = impl @@ object
           package ~ocamlfind:[] "zarith-freestanding" ]
       | `Unix | `MacOSX ->
         [ package ~min:"0.5.4" ~sublibs:["lwt"] "nocrypto" ]
+      | `Esp32 ->
+        [ package ~sublibs:["mirage"] "nocrypto-esp32";
+          package ~ocamlfind:[] "zarith-freestanding-esp32" ]
+      
 
     method! build _ = R.ok (enable_entropy ())
     method! connect i _ _ =
       match get_target i with
-      | `Xen | `Qubes | `Virtio | `Ukvm -> "Nocrypto_entropy_mirage.initialize ()"
+      | `Xen | `Qubes | `Virtio | `Ukvm | `Esp32 -> "Nocrypto_entropy_mirage.initialize ()"
       | `Unix | `MacOSX -> "Nocrypto_entropy_lwt.initialize ()"
   end
 
@@ -294,12 +302,23 @@ let console_solo5 str = impl @@ object
     method! connect _ modname _args = Fmt.strf "%s.connect %S" modname str
   end
 
+let console_esp32 str = impl @@ object
+    inherit base_configurable
+    method ty = console
+    val name = Name.ocamlify @@ "console_esp32_" ^ str
+    method name = name
+    method module_name = "Console_esp32"
+    method! packages = Key.pure [ package "mirage-console-esp32" ]
+    method! connect _ modname _args = Fmt.strf "%s.connect %S" modname str
+  end
+
 let custom_console str =
   match_impl Key.(value target) [
     `Xen, console_xen str;
     `Qubes, console_xen str;
     `Virtio, console_solo5 str;
-    `Ukvm, console_solo5 str
+    `Ukvm, console_solo5 str;
+    `Esp32, console_esp32 str
   ] ~default:(console_unix str)
 
 let default_console = custom_console "0"
@@ -348,7 +367,8 @@ let direct_kv_ro dirname =
     `Xen, crunch dirname;
     `Qubes, crunch dirname;
     `Virtio, crunch dirname;
-    `Ukvm, crunch dirname
+    `Ukvm, crunch dirname;
+    `Esp32, crunch dirname
   ] ~default:(direct_kv_ro_conf dirname)
 
 type block = BLOCK
@@ -385,10 +405,11 @@ class block_conf file =
       | `Xen | `Qubes -> [ package ~min:"1.5.0" ~sublibs:["front"] "mirage-block-xen" ]
       | `Virtio | `Ukvm -> [ package ~min:"0.2.1" "mirage-block-solo5" ]
       | `Unix | `MacOSX -> [ package ~min:"2.5.0" "mirage-block-unix" ]
+      | `Esp32 -> [ package "mirage-block-esp32" ]
 
     method private connect_name target root =
       match target with
-      | `Unix | `MacOSX | `Virtio | `Ukvm ->
+      | `Unix | `MacOSX | `Virtio | `Ukvm | `Esp32 ->
         Fpath.(to_string (root / b.filename)) (* open the file directly *)
       | `Xen | `Qubes ->
         (* don't try to infer anything about this filename - let
@@ -565,6 +586,7 @@ let network_conf (intf : string Key.key) =
       | `Xen -> [ package ~min:"1.7.0" "mirage-net-xen"]
       | `Qubes -> [ package ~min:"1.7.0" "mirage-net-xen" ; package ~min:"0.4" "mirage-qubes" ]
       | `Virtio | `Ukvm -> [ package ~min:"0.2.0" "mirage-net-solo5" ]
+      | `Esp32 -> [ package "mirage-net-esp32" ]
     method! connect _ modname _ =
       Fmt.strf "%s.connect %a" modname Key.serialize_call key
     method! configure i =
@@ -672,6 +694,7 @@ let right_tcpip_library ?min ?max ?ocamlfind ~sublibs pkg =
   |`MacOSX | `Unix -> [ package ?min ?max ?ocamlfind ~sublibs:("unix"::sublibs) pkg ]
   |`Qubes  | `Xen  -> [ package ?min ?max ?ocamlfind ~sublibs:("xen"::sublibs) pkg ]
   |`Virtio | `Ukvm -> [ package ?min ?max ?ocamlfind ~sublibs pkg ]
+  |`Esp32          -> [ package ?min ?max ?ocamlfind ~sublibs pkg ]
 
 let ipv4_keyed_conf ?network ?gateway () = impl @@ object
     inherit base_configurable
@@ -1329,7 +1352,10 @@ let mirage_log ?ring_size ~default =
     method ty = pclock @-> reporter
     method name = "mirage_logs"
     method module_name = "Mirage_logs.Make"
-    method! packages = Key.pure [ package ~min:"0.3.0" "mirage-logs"]
+    method! packages = 
+      Key.match_ Key.(value target) @@ function
+        | `Esp32 -> [ package ~min:"0.3.0" "mirage-logs-esp32"]
+        | _      -> [ package ~min:"0.3.0" "mirage-logs"]
     method! keys = [ Key.abstract logs ]
     method! connect _ modname = function
       | [ pclock ] ->
@@ -1377,7 +1403,7 @@ let mprof_trace ~size () =
     method! packages =
       Key.match_ Key.(value target) @@ function
       | `Xen | `Qubes -> [ package "mirage-profile"; package "mirage-profile-xen" ]
-      | `Virtio | `Ukvm -> []
+      | `Virtio | `Ukvm | `Esp32 -> []
       | `Unix | `MacOSX -> [ package "mirage-profile"; package "mirage-profile-unix" ]
     method! build _ =
       match query_ocamlfind ["lwt.tracing"] with
@@ -1387,6 +1413,7 @@ let mprof_trace ~size () =
       | Ok _ -> Ok ()
     method! connect i _ _ = match get_target i with
       | `Virtio | `Ukvm -> failwith  "tracing is not currently implemented for solo5 targets"
+      | `Esp32          -> failwith  "tracing is not currently implemented for esp32 targets"
       | `Unix | `MacOSX ->
         Fmt.strf
           "Lwt.return ())@.\
@@ -1749,6 +1776,7 @@ let terminal () =
   not dumb && isatty
 
 let compile libs warn_error target =
+  print_string "COMPILING";
   let tags =
     [ Fmt.strf "predicate(%s)" (backend_predicate target);
       "warn(A-4-41-42-44)";
@@ -1763,11 +1791,12 @@ let compile libs warn_error target =
   and result = match target with
     | `Unix | `MacOSX -> "main.native"
     | `Xen | `Qubes | `Virtio | `Ukvm -> "main.native.o"
+    | `Esp32 -> "main.byte.c"
   and cflags = [ "-g" ]
   and lflags =
     let dontlink =
       match target with
-      | `Xen | `Qubes | `Virtio | `Ukvm -> ["unix"; "str"; "num"; "threads"]
+      | `Xen | `Qubes | `Virtio | `Ukvm | `Esp32 -> ["unix"; "str"; "num"; "threads"]
       | `Unix | `MacOSX -> []
     in
     let dont = List.map (fun k -> [ "-dontlink" ; k ]) dontlink in
@@ -1912,14 +1941,15 @@ let link info name target target_debug =
         | _ -> acc)
         [] libs @ (if target_debug then ["gdb"] else [])
     in
-    pkg_config "solo5-kernel-ukvm" ["--variable=libdir"] >>= function
+    pkg_config "solo5-kernel-ukvm" ["--variable=libdir"] >>= (function
     | [ libdir ] ->
       Bos.OS.Cmd.run Bos.Cmd.(v "ukvm-configure" % (libdir ^ "/src/ukvm") %% of_list ukvm_mods) >>= fun () ->
       Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-f" % "Makefile.ukvm" % "ukvm-bin") >>= fun () ->
       Log.info (fun m -> m "linking with %a" Bos.Cmd.pp linker);
       Bos.OS.Cmd.run linker >>= fun () ->
       Ok out
-    | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed"
+    | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed")
+  | `Esp32 -> Ok "Not linked yet."
 
 let build i =
   let name = Info.name i in
@@ -1980,22 +2010,35 @@ module Project = struct
         Key.(abstract target_debug);
       ]
       method! packages =
-        let common = [
+        Key.match_ Key.(value target) @@ 
+        fun x -> 
+        let (common, t) = match x with 
+          | ` Esp32 -> ([ (* Esp32 needs cross compiled targets*)
           (* XXX: use %%VERSION_NUM%% here instead of hardcoding a version? *)
+          package "lwt-esp32";
+          package ~min:"3.0.0" "mirage-types-lwt-esp32";
+          package ~min:"3.0.0" "mirage-types-esp32";
+          package ~min:"3.0.0" "mirage-runtime-esp32" ;
+          package ~build:true "ocamlfind" ;
+          package ~build:true "ocamlbuild" ;
+        ], ` Esp32)
+          | t -> ([
           package "lwt";
           package ~min:"3.0.0" "mirage-types-lwt";
           package ~min:"3.0.0" "mirage-types";
           package ~min:"3.0.0" "mirage-runtime" ;
           package ~build:true "ocamlfind" ;
           package ~build:true "ocamlbuild" ;
-        ] in
-        Key.match_ Key.(value target) @@ function
+        ], t)
+        in
+        match t with  
         | `Xen | `Qubes -> [ package ~min:"3.0.4" "mirage-xen" ] @ common
         | `Virtio -> [ package ~min:"0.2.1" ~ocamlfind:[] "solo5-kernel-virtio" ;
                        package ~min:"0.2.0" "mirage-solo5" ] @ common
         | `Ukvm -> [ package ~min:"0.2.1" ~ocamlfind:[] "solo5-kernel-ukvm" ;
                      package ~min:"0.2.0" "mirage-solo5" ] @ common
         | `Unix | `MacOSX -> [ package ~min:"3.0.0" "mirage-unix" ] @ common
+        | `Esp32 -> [ package "mirage-esp32" ] @ common
 
       method! build = build
       method! configure = configure

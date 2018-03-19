@@ -88,6 +88,7 @@ type mode = [
   | `Ukvm
   | `MacOSX
   | `Qubes
+  | `Esp32
 ]
 
 let target_conv: mode Cmdliner.Arg.converter =
@@ -97,7 +98,8 @@ let target_conv: mode Cmdliner.Arg.converter =
     "xen"   , `Xen;
     "virtio", `Virtio;
     "ukvm"  , `Ukvm;
-    "qubes" , `Qubes
+    "qubes" , `Qubes;
+    "esp32" , `Esp32
   ]
 
 let pp_target fmt m = snd target_conv fmt m
@@ -122,6 +124,7 @@ let target =
     | `Ukvm   -> Fmt.pf ppf "`Ukvm"
     | `MacOSX -> Fmt.pf ppf "`MacOSX"
     | `Qubes  -> Fmt.pf ppf "`Qubes"
+    | `Esp32  -> Fmt.pf ppf "`Esp32"
   in
   let conv = Arg.conv ~conv:target_conv ~runtime_conv:"target" ~serialize in
   let doc =
@@ -134,7 +137,7 @@ let target =
 let is_unix =
   Key.match_ Key.(value target) @@ function
   | `Unix | `MacOSX -> true
-  | `Qubes | `Xen | `Virtio | `Ukvm -> false
+  | `Qubes | `Xen | `Virtio | `Ukvm | `Esp32 -> false
 
 let warn_error =
   let doc = "Enable -warn-error when compiling OCaml sources." in
