@@ -150,7 +150,6 @@ let posix_clock_conf = object
   method module_name = "Pclock"
   method! packages = (* Hacky *)
       Key.match_ Key.(value target) @@ function
-      | `Esp32          -> [ package "mirage-clock-esp32" ]
       | `Unix | `MacOSX -> [ package ~min:"1.2.0" "mirage-clock-unix" ]
       | _               -> [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
   method! connect _ modname _args = Fmt.strf "%s.connect ()" modname
@@ -168,7 +167,6 @@ let monotonic_clock_conf = object
   method module_name = "Mclock"
   method! packages =
       Key.match_ Key.(value target) @@ function
-      | `Esp32          -> [ package "mirage-clock-esp32" ]
       | `Unix | `MacOSX -> [ package ~min:"1.2.0" "mirage-clock-unix" ]
       | _               -> [ package ~min:"1.2.0" "mirage-clock-freestanding" ]
   method! connect _ modname _args = Fmt.strf "%s.connect ()" modname
@@ -586,7 +584,7 @@ let network_conf (intf : string Key.key) =
       | `Xen -> [ package ~min:"1.7.0" "mirage-net-xen"]
       | `Qubes -> [ package ~min:"1.7.0" "mirage-net-xen" ; package ~min:"0.4" "mirage-qubes" ]
       | `Virtio | `Ukvm -> [ package ~min:"0.2.0" "mirage-net-solo5" ]
-      | `Esp32 -> [ package "mirage-net-esp32" ]
+      | `Esp32 -> [ package "mirage-net-impl" ]
     method! connect _ modname _ =
       Fmt.strf "%s.connect %a" modname Key.serialize_call key
     method! configure i =
@@ -1352,10 +1350,7 @@ let mirage_log ?ring_size ~default =
     method ty = pclock @-> reporter
     method name = "mirage_logs"
     method module_name = "Mirage_logs.Make"
-    method! packages = 
-      Key.match_ Key.(value target) @@ function
-        | `Esp32 -> [ package ~min:"0.3.0" "mirage-logs-esp32"]
-        | _      -> [ package ~min:"0.3.0" "mirage-logs"]
+    method! packages = Key.pure [ package ~min:"0.3.0" "mirage-logs"]
     method! keys = [ Key.abstract logs ]
     method! connect _ modname = function
       | [ pclock ] ->
@@ -2010,28 +2005,15 @@ module Project = struct
         Key.(abstract target_debug);
       ]
       method! packages =
-        Key.match_ Key.(value target) @@ 
-        fun x -> 
-        let (common, t) = match x with 
-          | ` Esp32 -> ([ (* Esp32 needs cross compiled targets*)
-          (* XXX: use %%VERSION_NUM%% here instead of hardcoding a version? *)
-          package "lwt-esp32";
-          package ~min:"3.0.0" "mirage-types-lwt-esp32";
-          package ~min:"3.0.0" "mirage-types-esp32";
-          package ~min:"3.0.0" "mirage-runtime-esp32" ;
-          package ~build:true "ocamlfind" ;
-          package ~build:true "ocamlbuild" ;
-        ], ` Esp32)
-          | t -> ([
+        let common = [
           package "lwt";
           package ~min:"3.0.0" "mirage-types-lwt";
           package ~min:"3.0.0" "mirage-types";
           package ~min:"3.0.0" "mirage-runtime" ;
           package ~build:true "ocamlfind" ;
           package ~build:true "ocamlbuild" ;
-        ], t)
-        in
-        match t with  
+        ] in
+        Key.match_ Key.(value target) @@ function
         | `Xen | `Qubes -> [ package ~min:"3.0.4" "mirage-xen" ] @ common
         | `Virtio -> [ package ~min:"0.2.1" ~ocamlfind:[] "solo5-kernel-virtio" ;
                        package ~min:"0.2.0" "mirage-solo5" ] @ common
