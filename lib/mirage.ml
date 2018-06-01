@@ -1707,6 +1707,70 @@ let configure_makefile ~opam_name =
 
 let clean_makefile () = Bos.OS.File.delete Fpath.(v "Makefile")
 
+let configure_idf_directory () =
+  Bos.OS.Dir.create Fpath.(v "_build-esp32/main") >>= fun _ ->
+  let open Codegen in
+  (* Create SDK makefile *)
+  let file = Fpath.(v "_build-esp32/Makefile") in
+  with_output file (fun oc () ->
+      let fmt = Format.formatter_of_out_channel oc in
+      append fmt "PROJECT_NAME := mirage\n\
+                  include $(IDF_PATH)/make/project.mk\n";
+      R.ok())
+    "Makefile.user"
+  >>= fun () -> 
+  (* Create custom build instructions *)
+  let file = Fpath.(v "_build-esp32/main/component.mk") in
+  with_output file (fun oc () ->
+      let fmt = Format.formatter_of_out_channel oc in
+      append fmt "COMPONENT_EXTRA_INCLUDES := $(shell ocamlc -where)\n\
+                  COMPONENT_ADD_LDFLAGS := -l$(COMPONENT_NAME) -z muldefs\n\
+                  COMPONENT_EXTRA_CLEAN := main.o startup.o startup-c.o\n\
+                  COMPONENT_SRCDIRS := .\n\
+\n\
+                  startup.o: $(COMPONENT_PATH)/startup-c.c\n\
+                   \t$(CC) $(CFLAGS) $(CPPFLAGS) $(addprefix -I ,$(COMPONENT_INCLUDES)) $(addprefix -I ,$(COMPONENT_EXTRA_INCLUDES)) -c $< -o $%@\n\
+\n\
+                  startup-c.o: startup.o $(COMPONENT_PATH)/main.native.o\n\
+                    \t$(LD) -r startup.o $(COMPONENT_PATH)/main.native.o -o $%@\n\
+                    \n\
+                  .PHONY: build\n\
+                  build: startup-c.o\n";
+      R.ok())
+    "component.mk"
+  >>= fun () ->
+  (* Create startup file *)
+  let file = Fpath.(v "_build-esp32/main/startup-c.c") in
+  with_output file (fun oc () ->
+      let fmt = Format.formatter_of_out_channel oc in
+      append fmt "#include <stdio.h>\n\
+                  #include <errno.h>\n\
+                  #include \"freertos/FreeRTOS.h\"\n\
+\n\
+                  static char *argv[] = {\"mirage\", NULL};\n\
+                  extern void caml_main(char **argv);\n\
+\n\
+                  int signal() {\n\
+                      printf(\"signal: not implemented\\n\");\n\
+                      errno = ENOSYS;\n\
+                      return -1;\n\
+                  }\n\
+\n\
+                  void* dma_block;\n\
+\n\
+                  void app_main()\n\
+                  {\n\
+                      dma_block = heap_caps_malloc( heap_caps_get_largest_free_block(MALLOC_CAP_DMA)*9/10, MALLOC_CAP_DMA);\n\
+                      caml_main(argv);\n\
+                  }\n";
+      R.ok())
+    "startup-c.c"
+  >>= fun () ->
+  Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-C" % "_build-esp32" % "menuconfig")
+  
+
+
+
 let fn = Fpath.(v "myocamlbuild.ml")
 
 (* ocamlbuild will give a misleading hint on build failures
@@ -1772,6 +1836,8 @@ let configure i =
     configure_main_xl ~substitutions:[] "xl.in" i >>= fun () ->
     configure_main_xe ~root ~name >>= fun () ->
     configure_main_libvirt_xml ~root ~name
+  | `Esp32 -> 
+    configure_idf_directory ()
   | _ -> R.ok ()
 
 let terminal () =
@@ -1958,7 +2024,13 @@ let link info name target target_debug =
       Bos.OS.Cmd.run linker >>= fun () ->
       Ok out
     | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed")
-  | `Esp32 -> Ok "Not linked yet."
+  | `Esp32 -> 
+    static_libs "mirage-esp32" >>= fun static_libs ->
+      let libs = String.concat ~sep:" " static_libs in
+      Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-C" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
+      >>= fun () ->
+      Ok "esp32"
+
 
 let build i =
   let name = Info.name i in
