@@ -1716,10 +1716,18 @@ let fn = Fpath.(v "myocamlbuild.ml")
  * myocamlbuild.ml or _tags
  * ( https://github.com/ocaml/ocamlbuild/blob/0eb62b72b5abd520484210125b18073338a634bc/src/options.ml#L375-L387 )
  * so we create an empty myocamlbuild.ml . *)
-let configure_myocamlbuild () =
-  Bos.OS.File.exists fn >>= function
-  | true -> R.ok ()
-  | false -> Bos.OS.File.write fn ""
+let configure_myocamlbuild target =
+  let content = match target with 
+    | `Esp32 ->"open Ocamlbuild_plugin\n\
+                let () =\n\
+                    dispatch (function\n\
+                    | After_rules ->\n\
+                    flag [\"ocaml\"; \"link\"; \"native\"; \"output_obj\"] (A\"-output-complete-obj\");\n\
+                    flag [\"ocaml\"; \"link\"; \"byte\"; \"output_obj\"] (A\"-output-complete-obj\")\n\
+                    | _ -> ())\n"
+    | _ -> ""
+  in
+  Bos.OS.File.write fn content
 
 (* we made it, so we should clean it up *)
 let clean_myocamlbuild () =
@@ -1755,7 +1763,7 @@ let configure i =
   let target_debug = Key.(get ctx target_debug) in
   if target_debug && target <> `Ukvm then
     Log.warn (fun m -> m "-g not supported for target: %a" Key.pp_target target);
-  configure_myocamlbuild () >>= fun () ->
+  configure_myocamlbuild target >>= fun () ->
   configure_opam ~name:opam_name i >>= fun () ->
   configure_makefile ~opam_name >>= fun () ->
   match target with
