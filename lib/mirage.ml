@@ -2026,6 +2026,8 @@ let link info name target target_debug =
     | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed")
   | `Esp32 -> 
     static_libs "mirage-esp32" >>= fun static_libs ->
+      Bos.OS.Cmd.run Bos.Cmd.(v "cp" % "_build/main.native.o" % "_build-esp32/main/main.native.o")
+      >>= fun () ->
       let libs = String.concat ~sep:" " static_libs in
       Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-C" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
       >>= fun () ->
