@@ -1796,9 +1796,13 @@ let compile libs warn_error target =
     in
     let dont = List.map (fun k -> [ "-dontlink" ; k ]) dontlink in
     "-g" :: List.flatten dont
+  and cross_toolchain = match target with
+    | `Esp32 -> "esp32"
+    | _ -> ""
   in
   let concat = String.concat ~sep:"," in
   let cmd = Bos.Cmd.(v "ocamlbuild" % "-use-ocamlfind" %
+                     "-toolchain" % cross_toolchain %
                      "-classic-display" %
                      "-tags" % concat tags %
                      "-pkgs" % concat libs %
