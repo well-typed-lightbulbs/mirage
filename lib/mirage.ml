@@ -1785,8 +1785,7 @@ let compile libs warn_error target =
     (if terminal () then ["color(always)"] else [])
   and result = match target with
     | `Unix | `MacOSX -> "main.native"
-    | `Xen | `Qubes | `Virtio | `Ukvm -> "main.native.o"
-    | `Esp32 -> "main.byte.c"
+    | `Xen | `Qubes | `Virtio | `Ukvm | `Esp32 -> "main.native.o"
   and cflags = [ "-g" ]
   and lflags =
     let dontlink =
