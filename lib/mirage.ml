@@ -1732,7 +1732,7 @@ let configure_idf_directory () =
                    \t$(CC) $(CFLAGS) $(CPPFLAGS) $(addprefix -I ,$(COMPONENT_INCLUDES)) $(addprefix -I ,$(COMPONENT_EXTRA_INCLUDES)) -c $< -o $%@\n\
 \n\
                   startup-c.o: startup.o $(COMPONENT_PATH)/main.native.o\n\
-                    \t$(LD) -r startup.o $(COMPONENT_PATH)/main.native.o -o $%@\n\
+                    \t$(LD) -r startup.o $(COMPONENT_PATH)/main.native.o $(EXTLIBS) -o $%@\n\
                     \n\
                   .PHONY: build\n\
                   build: startup-c.o\n";
