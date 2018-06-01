@@ -190,7 +190,7 @@ end
 let stdlib_random = impl stdlib_random_conf
 
 
-let query_ocamlfind ?(recursive = false) ?(format="%p") ?predicates libs =
+let query_ocamlfind ?(recursive = false) ?(format="%p") ?predicates libs target =
   let open Bos in
   let flag = if recursive then (Cmd.v "-recursive") else Cmd.empty
   and format = Cmd.of_list [ "-format" ; format ]
@@ -198,9 +198,12 @@ let query_ocamlfind ?(recursive = false) ?(format="%p") ?predicates libs =
     | None -> []
     | Some x -> [ "-predicates" ; x ]
   and q = "query"
+  and cross_toolchain = match target with
+    | `Esp32 -> Cmd.of_list [ "-toolchain"; "esp32" ]
+    | _ -> Cmd.empty
   in
   let cmd =
-    Cmd.(v "ocamlfind" % q %% flag %% format %% of_list predicate %% of_list libs)
+    Cmd.(v "ocamlfind" %% cross_toolchain %% v q %% flag %% format %% of_list predicate %% of_list libs)
   in
   OS.Cmd.run_out cmd |> OS.Cmd.out_lines >>| fst
 
@@ -212,8 +215,8 @@ let enable_entropy, is_entropy_enabled =
   let g () = !r in
   (f, g)
 
-let check_entropy libs =
-  query_ocamlfind ~recursive:true libs >>= fun ps ->
+let check_entropy libs target =
+  query_ocamlfind ~recursive:true libs target >>= fun ps ->
   if List.mem "nocrypto" ps && not (is_entropy_enabled ()) then
     R.error_msg
       {___|The \"nocrypto\" library is loaded but entropy is not enabled!@ \
@@ -1400,8 +1403,8 @@ let mprof_trace ~size () =
       | `Xen | `Qubes -> [ package "mirage-profile"; package "mirage-profile-xen" ]
       | `Virtio | `Ukvm | `Esp32 -> []
       | `Unix | `MacOSX -> [ package "mirage-profile"; package "mirage-profile-unix" ]
-    method! build _ =
-      match query_ocamlfind ["lwt.tracing"] with
+    method! build i =
+      match query_ocamlfind ["lwt.tracing"] (get_target i) with
       | Error _ | Ok [] ->
         R.error_msg "lwt.tracing module not found. Hint:\
                      opam pin add lwt https://github.com/mirage/lwt.git#tracing"
@@ -1846,13 +1849,13 @@ let pkg_config pkgs args =
 
 (* Get the linker flags for any extra C objects we depend on.
  * This is needed when building a Xen/Solo5 image as we do the link manually. *)
-let extra_c_artifacts target pkgs =
+let extra_c_artifacts target_str target pkgs =
   Lazy.force opam_prefix >>= fun prefix ->
   let lib = prefix ^ "/lib" in
-  let format = Fmt.strf "%%d\t%%(%s_linkopts)" target
+  let format = Fmt.strf "%%d\t%%(%s_linkopts)" target_str
   and predicates = "native"
   in
-  query_ocamlfind ~recursive:true ~format ~predicates pkgs >>= fun data ->
+  query_ocamlfind ~recursive:true ~format ~predicates pkgs target >>= fun data ->
   let r = List.fold_left (fun acc line ->
       match String.cut line ~sep:"\t" with
       | None -> acc
@@ -1880,7 +1883,7 @@ let link info name target target_debug =
     Bos.OS.Cmd.run Bos.Cmd.(v "ln" % "-nfs" % "_build/main.native" % name) >>= fun () ->
     Ok name
   | `Xen | `Qubes ->
-    extra_c_artifacts "xen" libs >>= fun c_artifacts ->
+    extra_c_artifacts "xen" target libs >>= fun c_artifacts ->
     static_libs "mirage-xen" >>= fun static_libs ->
     let linker =
       Bos.Cmd.(v "ld" % "-d" % "-static" % "-nostdlib" % "_build/main.native.o" %%
@@ -1908,7 +1911,7 @@ let link info name target target_debug =
       Ok out
     end
   | `Virtio ->
-    extra_c_artifacts "freestanding" libs >>= fun c_artifacts ->
+    extra_c_artifacts "freestanding" target libs >>= fun c_artifacts ->
     static_libs "mirage-solo5" >>= fun static_libs ->
     ldflags "solo5-kernel-virtio" >>= fun ldflags ->
     ldpostflags "solo5-kernel-virtio" >>= fun ldpostflags ->
@@ -1922,7 +1925,7 @@ let link info name target target_debug =
     Bos.OS.Cmd.run linker >>= fun () ->
     Ok out
   | `Ukvm ->
-    extra_c_artifacts "freestanding" libs >>= fun c_artifacts ->
+    extra_c_artifacts "freestanding" target libs >>= fun c_artifacts ->
     static_libs "mirage-solo5" >>= fun static_libs ->
     ldflags "solo5-kernel-ukvm" >>= fun ldflags ->
     ldpostflags "solo5-kernel-ukvm" >>= fun ldpostflags ->
@@ -1956,7 +1959,7 @@ let build i =
   let target = Key.(get ctx target) in
   let libs = Info.libraries i in
   let target_debug = Key.(get ctx target_debug) in
-  check_entropy libs >>= fun () ->
+  check_entropy libs target >>= fun () ->
   compile libs warn_error target >>= fun () ->
   link i name target target_debug >>| fun out ->
   Log.info (fun m -> m "Build succeeded: %s" out)
