@@ -1765,8 +1765,6 @@ let configure_idf_directory () =
                   }\n";
       R.ok())
     "startup-c.c"
-  >>= fun () ->
-  Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-C" % "_build-esp32" % "menuconfig")
   
 
 
