@@ -2075,7 +2075,7 @@ let link info name target target_debug =
       >>= fun () ->
       let libs = String.concat ~sep:" " libs
       and idf_path = String.concat ~sep:" " idf_path in
-      Bos.OS.Cmd.run Bos.Cmd.(v "env" % ("IDF_PATH="^idf_path) % "make" % "-C" % "-j" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
+      Bos.OS.Cmd.run Bos.Cmd.(v "env" % ("IDF_PATH="^idf_path) % "make" % "-j" % "-C" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
       >>= fun () ->
       Ok "esp32"
 
