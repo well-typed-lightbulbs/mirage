@@ -2149,7 +2149,7 @@ module Project = struct
         | `Ukvm -> [ package ~min:"0.2.1" ~ocamlfind:[] "solo5-kernel-ukvm" ;
                      package ~min:"0.2.0" "mirage-solo5" ] @ common
         | `Unix | `MacOSX -> [ package ~min:"3.0.0" "mirage-unix" ] @ common
-        | `Esp32 -> [ package "mirage-esp32";package ~build:true "esp32-idf" ] @ common
+        | `Esp32 -> [ package "mirage-impl-esp32";package ~build:true "esp32-idf" ] @ common
 
       method! build = build
       method! configure = configure
