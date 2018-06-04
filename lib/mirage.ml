@@ -1945,7 +1945,7 @@ let opam_prefix =
   lazy (Bos.OS.Cmd.run_out cmd |> Bos.OS.Cmd.out_string >>| fst)
 
 (* Invoke pkg-config and return output if successful. *)
-let pkg_config pkgs args =
+let pkg_config cross_target pkgs args =
   let var = "PKG_CONFIG_PATH" in
   let pkg_config_fallback = match Bos.OS.Env.var var with
     | Some path -> ":" ^ path
@@ -1954,7 +1954,12 @@ let pkg_config pkgs args =
   Lazy.force opam_prefix >>= fun prefix ->
   (* the order here matters (at least for ancient 0.26, distributed with
        ubuntu 14.04 versions): use share before lib! *)
-  let value = Fmt.strf "%s/share/pkgconfig:%s/lib/pkgconfig%s" prefix prefix pkg_config_fallback in
+  let cross_sysroot = match cross_target with
+    | None -> ""
+    | Some `Esp32 -> ":"^prefix^"/esp32-sysroot/share/pkgconfig"
+    | Some _ -> ""
+  in
+  let value = Fmt.strf "%s/share/pkgconfig:%s/lib/pkgconfig%s%s" prefix prefix cross_sysroot pkg_config_fallback in
   Bos.OS.Env.set_var var (Some value) >>= fun () ->
   let cmd = Bos.Cmd.(v "pkg-config" % pkgs %% of_list args) in
   Bos.OS.Cmd.run_out cmd |> Bos.OS.Cmd.out_string >>| fun (data, _) ->
@@ -1983,11 +1988,11 @@ let extra_c_artifacts target_str target pkgs =
   in
   R.ok r
 
-let static_libs pkg_config_deps = pkg_config pkg_config_deps [ "--static" ; "--libs" ]
+let static_libs ?cross_target pkg_config_deps = pkg_config cross_target pkg_config_deps [ "--static" ; "--libs" ]
 
-let ldflags pkg = pkg_config pkg ["--variable=ldflags"]
+let ldflags pkg = pkg_config None pkg ["--variable=ldflags"]
 
-let ldpostflags pkg = pkg_config pkg ["--variable=ldpostflags"]
+let ldpostflags pkg = pkg_config None pkg ["--variable=ldpostflags"]
 
 let link info name target target_debug =
   let libs = Info.libraries info in
@@ -2055,7 +2060,7 @@ let link info name target target_debug =
         | _ -> acc)
         [] libs @ (if target_debug then ["gdb"] else [])
     in
-    pkg_config "solo5-kernel-ukvm" ["--variable=libdir"] >>= (function
+    pkg_config None "solo5-kernel-ukvm" ["--variable=libdir"] >>= (function
     | [ libdir ] ->
       Bos.OS.Cmd.run Bos.Cmd.(v "ukvm-configure" % (libdir ^ "/src/ukvm") %% of_list ukvm_mods) >>= fun () ->
       Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-f" % "Makefile.ukvm" % "ukvm-bin") >>= fun () ->
@@ -2064,7 +2069,7 @@ let link info name target target_debug =
       Ok out
     | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed")
   | `Esp32 -> 
-    static_libs "mirage-impl-esp32" >>= fun libs ->
+    static_libs ~cross_target:`Esp32 "mirage-impl-esp32" >>= fun libs ->
     static_libs "esp32-idf" >>= fun idf_path ->
       Bos.OS.Cmd.run Bos.Cmd.(v "cp" % "_build/main.native.o" % "_build-esp32/main/main.native.o")
       >>= fun () ->
