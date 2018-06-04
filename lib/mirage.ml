@@ -2066,11 +2066,13 @@ let link info name target target_debug =
       Ok out
     | _ -> R.error_msg "pkg-config solo5-kernel-ukvm --variable=libdir failed")
   | `Esp32 -> 
-    static_libs "mirage-esp32" >>= fun static_libs ->
+    static_libs "mirage-esp32" >>= fun libs ->
+    static_libs "esp32-idf" >>= fun idf_path ->
       Bos.OS.Cmd.run Bos.Cmd.(v "cp" % "_build/main.native.o" % "_build-esp32/main/main.native.o")
       >>= fun () ->
-      let libs = String.concat ~sep:" " static_libs in
-      Bos.OS.Cmd.run Bos.Cmd.(v "make" % "-C" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
+      let libs = String.concat ~sep:" " libs
+      and idf_path = String.concat ~sep:" " idf_path in
+      Bos.OS.Cmd.run Bos.Cmd.(v "env" % ("IDF_PATH="^idf_path) % "make" % "-C" % "_build-esp32" % "all" % ("EXTLIBS="^libs))
       >>= fun () ->
       Ok "esp32"
 
@@ -2149,7 +2151,7 @@ module Project = struct
         | `Ukvm -> [ package ~min:"0.2.1" ~ocamlfind:[] "solo5-kernel-ukvm" ;
                      package ~min:"0.2.0" "mirage-solo5" ] @ common
         | `Unix | `MacOSX -> [ package ~min:"3.0.0" "mirage-unix" ] @ common
-        | `Esp32 -> [ package "mirage-esp32" ] @ common
+        | `Esp32 -> [ package "mirage-esp32";package ~build:true "esp32-idf" ] @ common
 
       method! build = build
       method! configure = configure
