@@ -1799,6 +1799,40 @@ let clean_myocamlbuild () =
   | Ok stat when stat.Unix.st_size = 0 -> Bos.OS.File.delete fn
   | _ -> R.ok ()
 
+
+let update_package_suffix suffix pkg =
+  let build = pkg.build
+  in
+  let opam = if build then pkg.opam else pkg.opam^suffix
+  and ocamlfind = Astring.String.Set.elements pkg.ocamlfind
+  and min = pkg.min
+  and max = pkg.max
+  in
+    match (min, max) with
+    | None, None -> package ~build ~ocamlfind opam
+    | (Some min), None -> package ~build ~ocamlfind ~min opam
+    | None, (Some max) ->  package ~build ~ocamlfind ~max opam
+    | (Some min), (Some max) -> package ~build ~ocamlfind ~min ~max opam
+
+
+
+let add_info_suffix target info =
+  let suffix = match target with 
+    | `Esp32 -> "-esp32"
+    | _ -> ""
+  in
+  let name = Info.name info 
+  and build_dir = Info.build_dir info 
+  and context = Info.context info 
+  and keys = Info.keys info 
+  and packages = Info.packages info
+  in 
+  let packages = List.map (update_package_suffix suffix) packages 
+  in
+  Info.create ~packages ~keys ~context ~build_dir ~name
+
+
+
 let configure_opam ~name info =
   let open Codegen in
   let file = Fpath.(v name + "opam") in
@@ -1809,9 +1843,15 @@ let configure_opam ~name info =
       append fmt "build: [ \"mirage\" \"build\" ]";
       append fmt "available: [ ocaml-version >= \"4.03.0\" ]";
       R.ok ())
-    "opam file"
+    "opam file" 
 
 let clean_opam ~name = Bos.OS.File.delete Fpath.(v name + "opam")
+
+let configure_tags_esp32 () =
+  let content = "<_build-esp32>: -traverse\n"
+  and fn = Fpath.(v "_tags")
+  in
+  Bos.OS.File.write fn content
 
 let unikernel_name target name =
   let target = Fmt.strf "%a" Key.pp_target target in
@@ -1828,7 +1868,7 @@ let configure i =
   if target_debug && target <> `Ukvm then
     Log.warn (fun m -> m "-g not supported for target: %a" Key.pp_target target);
   configure_myocamlbuild target >>= fun () ->
-  configure_opam ~name:opam_name i >>= fun () ->
+  configure_opam ~name:opam_name (add_info_suffix target i) >>= fun () ->
   configure_makefile ~opam_name >>= fun () ->
   match target with
   | `Xen | `Qubes ->
@@ -1836,7 +1876,8 @@ let configure i =
     configure_main_xl ~substitutions:[] "xl.in" i >>= fun () ->
     configure_main_xe ~root ~name >>= fun () ->
     configure_main_libvirt_xml ~root ~name
-  | `Esp32 -> 
+  | `Esp32 ->
+    configure_tags_esp32 () >>= fun () ->
     configure_idf_directory ()
   | _ -> R.ok ()
 
