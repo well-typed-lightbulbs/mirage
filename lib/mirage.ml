@@ -1916,7 +1916,7 @@ let compile libs warn_error target =
     | _ -> ""
   in
   let concat = String.concat ~sep:"," in
-  let cmd = Bos.Cmd.(v "ocamlbuild" % "-use-ocamlfind" %
+  let cmd = Bos.Cmd.(v "env" % "OCAMLPARAM=use-lto=1,_" % "ocamlbuild" % "-use-ocamlfind" %
                      "-toolchain" % cross_toolchain %
                      "-classic-display" %
                      "-tags" % concat tags %
