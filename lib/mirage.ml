@@ -1675,9 +1675,23 @@ let configure_main_xe ~root ~name =
 
 let clean_main_xe ~name = Bos.OS.File.delete Fpath.(v name + "xe")
 
-let configure_makefile ~opam_name =
+let configure_makefile ~opam_name target =
   let open Codegen in
   let file = Fpath.(v "Makefile") in
+  let additional_content = match target with 
+  | `Esp32 -> " .PHONY: size size-components flash monitor\n\
+                size:\n\
+                \t$(MAKE) -C _build-esp32 size\n\
+                size-components:\n\
+                \t$(MAKE) -C _build-esp32 size-components\n\
+                flash:\n\
+                \t$(MAKE) -C _build-esp32 flash\n\
+                monitor:\n\
+                \t$(MAKE) -C _build-esp32 monitor\n\
+                menuconfig:\n\
+                \t$(MAKE) -C _build-esp32 menuconfig\n"
+  | _ -> ""
+  in
   with_output file (fun oc () ->
       let fmt = Format.formatter_of_out_channel oc in
       append fmt "# %s" (generated_header ());
@@ -1702,6 +1716,8 @@ let configure_makefile ~opam_name =
                   clean::\n\
                   \tmirage clean\n"
         opam_name opam_name opam_name opam_name;
+        newline fmt;
+        append fmt "%s" additional_content;
       R.ok ())
     "Makefile"
 
@@ -1873,7 +1889,7 @@ let configure i =
     Log.warn (fun m -> m "-g not supported for target: %a" Key.pp_target target);
   configure_myocamlbuild target >>= fun () ->
   configure_opam ~name:opam_name (add_info_suffix target i) >>= fun () ->
-  configure_makefile ~opam_name >>= fun () ->
+  configure_makefile ~opam_name target >>= fun () ->
   match target with
   | `Xen | `Qubes ->
     configure_main_xl "xl" i >>= fun () ->
