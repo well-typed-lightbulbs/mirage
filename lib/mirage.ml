@@ -1794,7 +1794,7 @@ let configure_myocamlbuild target =
 (* we made it, so we should clean it up *)
 let clean_myocamlbuild () =
   match Bos.OS.Path.stat fn with
-  | Ok stat when stat.Unix.st_size = 0 -> Bos.OS.File.delete fn
+  | Ok _ -> Bos.OS.File.delete fn
   | _ -> R.ok ()
 
 
@@ -1850,6 +1850,12 @@ let configure_tags_esp32 () =
   and fn = Fpath.(v "_tags")
   in
   Bos.OS.File.write fn content
+
+let clean_tags () =
+  let fn = Fpath.(v "_tags") in
+  match Bos.OS.Path.stat fn with
+  | Ok _ -> Bos.OS.File.delete fn
+  | _ -> R.ok ()
 
 let unikernel_name target name =
   let target = Fmt.strf "%a" Key.pp_target target in
@@ -2101,6 +2107,7 @@ let clean i =
   clean_main_xe ~name >>= fun () ->
   clean_main_libvirt_xml ~name >>= fun () ->
   clean_myocamlbuild () >>= fun () ->
+  clean_tags () >>= fun () ->
   clean_makefile () >>= fun () ->
   clean_opam ~name:(unikernel_name target name) >>= fun () ->
   Bos.OS.File.delete Fpath.(v "main.native.o") >>= fun () ->
@@ -2112,6 +2119,7 @@ let clean i =
   Bos.OS.File.delete Fpath.(v name + "ukvm") >>= fun () ->
   Bos.OS.File.delete Fpath.(v "Makefile.ukvm") >>= fun () ->
   Bos.OS.Dir.delete ~recurse:true Fpath.(v "_build-ukvm") >>= fun () ->
+  Bos.OS.Dir.delete ~recurse:true Fpath.(v "_build-esp32") >>= fun () ->
   Bos.OS.File.delete Fpath.(v "ukvm-bin")
 
 module Project = struct
