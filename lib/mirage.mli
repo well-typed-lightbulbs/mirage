@@ -410,6 +410,8 @@ val generic_stackv4:
   ?net_key:[ `Direct | `Socket ] value ->
   network impl -> stackv4 impl
 
+val dyn_dhcp_ipv4_stack: ?time:time impl -> network impl -> stackv4 impl
+
 (** {2 Resolver configuration} *)
 
 type resolver
