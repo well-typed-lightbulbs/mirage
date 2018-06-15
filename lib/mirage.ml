@@ -17,7 +17,7 @@
 
 open Rresult
 open Astring
-
+ 
 module Key = Mirage_key
 module Name = Functoria_app.Name
 module Codegen = Functoria_app.Codegen
@@ -595,7 +595,7 @@ let network_conf (intf : string Key.key) =
       R.ok ()
   end
 
-let netif ?group dev = impl (network_conf @@ Key.interface ?group dev)
+let netif ?group dev = impl (network_conf @@ Key.interface ?group dev) 
 let default_network =
   match_impl Key.(value target) [
     `Unix   , netif "tap0";
@@ -604,6 +604,49 @@ let default_network =
 
 type dhcp = Dhcp_client
 let dhcp = Type Dhcp_client
+
+type netif_dhcp = Netif_Dhcp
+let netif_dhcp = Type Netif_Dhcp
+
+let netif_dhcp_conf = 
+  object 
+    inherit base_configurable
+    method ty = time @-> network @-> netif_dhcp
+    val name = Functoria_app.Name.create "netif_dhcp" ~prefix:"netif_dhcp"
+    method name = name
+    method module_name = "Netif_Dhcp"
+    method! packages = 
+      Key.match_ Key.(value target) @@ function
+      | `Esp32 -> [ package "netif-dhcp" ]
+      | _ -> failwith "Not implemented"
+    method! connect _ modname = function
+    | [ time ; network ] -> Fmt.strf "%s.connect %s %s" modname time network
+    | _ -> failwith (connect_err "netif_dhcp" 3)
+  end
+
+let netif_demux_conf =
+  object 
+    inherit base_configurable
+    method ty = netif_dhcp @-> network
+    val name = Functoria_app.Name.create "netif_demux" ~prefix:"netif_demux"
+    method name = name
+    method module_name = "Netif_demux"
+    method! connect _ modname = function
+    | [ netif_dhcp ] -> Fmt.strf "%s.connect %s " modname netif_dhcp
+    | _ -> failwith (connect_err "netif_demux" 3)
+  end
+
+let dhcp_demux_conf =
+  object 
+    inherit base_configurable
+    method ty = netif_dhcp @-> dhcp
+    val name = Functoria_app.Name.create "dhcp_demux" ~prefix:"dhcp_demux"
+    method name = name
+    method module_name = "dhcp_demux"
+    method! connect _ modname = function
+    | [ netif_dhcp ] -> Fmt.strf "%s.connect %s " modname netif_dhcp
+    | _ -> failwith (connect_err "dhcp_demux" 3)
+  end
 
 type ethernet = ETHERNET
 let ethernet = Type ETHERNET
@@ -954,6 +997,7 @@ let direct_stackv4
   $ direct_udp ~random ip
   $ direct_tcp ~clock ~random ~time ip
 
+
 let dhcp_ipv4_stack ?group ?(time = default_time) ?(arp = arp ?clock:None ?time:None) tap =
   let config = dhcp time tap in
   let e = etif tap in
@@ -1019,6 +1063,16 @@ let generic_stackv4
     `Socket, socket_stackv4 ?group [Ipaddr.V4.any];
     `Qubes, qubes_ipv4_stack ?group tap;
   ] ~default:(static_ipv4_stack ?config ?group tap)
+
+
+let dyn_dhcp_ipv4_stack ?(time = default_time) tap =
+  let base_net = impl @@ netif_dhcp_conf $ time $ tap in
+  let tap = impl @@ netif_demux_conf $ base_net in
+  let config = impl @@ dhcp_demux_conf $ base_net in
+  let e = etif tap in
+  let a = arp e in
+  let i = ipv4_of_dhcp config e a in
+  direct_stackv4 tap e a i
 
 type conduit_connector = Conduit_connector
 let conduit_connector = Type Conduit_connector
@@ -1765,7 +1819,6 @@ let configure_idf_directory () =
       let fmt = Format.formatter_of_out_channel oc in
       append fmt "#include <stdio.h>\n\
                   #include <errno.h>\n\
-                  #include \"freertos/FreeRTOS.h\"\n\
 \n\
                   static char *argv[] = {\"mirage\", NULL};\n\
                   extern void caml_main(char **argv);\n\
@@ -1776,11 +1829,8 @@ let configure_idf_directory () =
                       return -1;\n\
                   }\n\
 \n\
-                  void* dma_block;\n\
-\n\
                   void app_main()\n\
                   {\n\
-                      dma_block = heap_caps_malloc( heap_caps_get_largest_free_block(MALLOC_CAP_DMA)*9/10, MALLOC_CAP_DMA);\n\
                       caml_main(argv);\n\
                   }\n";
       R.ok())
