@@ -642,7 +642,7 @@ let dhcp_demux_conf =
     method ty = netif_dhcp @-> dhcp
     val name = Functoria_app.Name.create "dhcp_demux" ~prefix:"dhcp_demux"
     method name = name
-    method module_name = "dhcp_demux"
+    method module_name = "Dhcp_demux"
     method! connect _ modname = function
     | [ netif_dhcp ] -> Fmt.strf "%s.connect %s " modname netif_dhcp
     | _ -> failwith (connect_err "dhcp_demux" 3)
