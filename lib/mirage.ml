@@ -614,7 +614,7 @@ let netif_dhcp_conf =
     method ty = time @-> network @-> netif_dhcp
     val name = Functoria_app.Name.create "netif_dhcp" ~prefix:"netif_dhcp"
     method name = name
-    method module_name = "Netif_Dhcp"
+    method module_name = "Netif_dhcp.Make"
     method! packages = 
       Key.match_ Key.(value target) @@ function
       | `Esp32 -> [ package "netif-dhcp" ]
@@ -630,7 +630,7 @@ let netif_demux_conf =
     method ty = netif_dhcp @-> network
     val name = Functoria_app.Name.create "netif_demux" ~prefix:"netif_demux"
     method name = name
-    method module_name = "Netif_demux"
+    method module_name = "Netif_demux.Make"
     method! connect _ modname = function
     | [ netif_dhcp ] -> Fmt.strf "%s.connect %s " modname netif_dhcp
     | _ -> failwith (connect_err "netif_demux" 3)
@@ -642,7 +642,7 @@ let dhcp_demux_conf =
     method ty = netif_dhcp @-> dhcp
     val name = Functoria_app.Name.create "dhcp_demux" ~prefix:"dhcp_demux"
     method name = name
-    method module_name = "Dhcp_demux"
+    method module_name = "Dhcp_demux.Make"
     method! connect _ modname = function
     | [ netif_dhcp ] -> Fmt.strf "%s.connect %s " modname netif_dhcp
     | _ -> failwith (connect_err "dhcp_demux" 3)
