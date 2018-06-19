@@ -1733,7 +1733,7 @@ let configure_makefile ~opam_name target =
   let open Codegen in
   let file = Fpath.(v "Makefile") in
   let additional_content = match target with 
-  | `Esp32 -> " PKG_CONFIG_PATH := $(OPAM_SWITCH_PREFIX)/share/pkgconfig\n\
+  | `Esp32 -> " PKG_CONFIG_PATH := $(shell opam config var share)/pkgconfig\n\
                 export PKG_CONFIG_PATH\n\
                 IDF_PATH := $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)' pkg-config esp32-idf --libs --static)\n\
                 export IDF_PATH\n\
