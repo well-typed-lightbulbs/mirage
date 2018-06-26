@@ -242,8 +242,7 @@ let nocrypto = impl @@ object
       | `Unix | `MacOSX ->
         [ package ~min:"0.5.4" ~sublibs:["lwt"] "nocrypto" ]
       | `Esp32 ->
-        [ package ~sublibs:["mirage"] "nocrypto-esp32";
-          package ~ocamlfind:[] "zarith-freestanding-esp32" ]
+        [  ]
       
 
     method! build _ = R.ok (enable_entropy ())
@@ -309,7 +308,7 @@ let console_esp32 str = impl @@ object
     val name = Name.ocamlify @@ "console_esp32_" ^ str
     method name = name
     method module_name = "Console_esp32"
-    method! packages = Key.pure [ package "mirage-console-esp32" ]
+    method! packages = Key.pure [ package "mirage-console-impl" ]
     method! connect _ modname _args = Fmt.strf "%s.connect %S" modname str
   end
 
