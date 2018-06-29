@@ -326,7 +326,7 @@ let default_console = custom_console "0"
 type kv_ro = KV_RO
 let kv_ro = Type KV_RO
 
-let crunch dirname = impl @@ object
+let crunch ?(mode="lwt") dirname = impl @@ object
     inherit base_configurable
     method ty = kv_ro
     val name = Name.create ("static" ^ dirname) ~prefix:"static"
@@ -342,7 +342,7 @@ let crunch dirname = impl @@ object
       Bos.OS.Path.exists dir >>= function
       | true ->
         Log.info (fun m -> m "Generating: %a" Fpath.pp file);
-        Bos.OS.Cmd.run Bos.Cmd.(v "ocaml-crunch" % "-o" % p file % p dir)
+        Bos.OS.Cmd.run Bos.Cmd.(v "ocaml-crunch" % "-m" % mode % "-o" % p file % p dir)
       | false ->
         R.error_msg (Fmt.strf "The directory %s does not exist." dirname)
     method! clean _i =
@@ -368,7 +368,7 @@ let direct_kv_ro dirname =
     `Qubes, crunch dirname;
     `Virtio, crunch dirname;
     `Ukvm, crunch dirname;
-    `Esp32, crunch dirname
+    `Esp32, crunch ~mode:"lwt-no-io-page" dirname
   ] ~default:(direct_kv_ro_conf dirname)
 
 type block = BLOCK

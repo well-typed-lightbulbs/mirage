@@ -187,7 +187,7 @@ type kv_ro
 val kv_ro: kv_ro typ
 (** Implementations of the [Mirage_types.KV_RO] signature. *)
 
-val crunch: string -> kv_ro impl
+val crunch:  ?mode:string -> string -> kv_ro impl
 (** Crunch a directory. *)
 
 val archive: block impl -> kv_ro impl
