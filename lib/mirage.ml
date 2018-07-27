@@ -242,7 +242,7 @@ let nocrypto = impl @@ object
       | `Unix | `MacOSX ->
         [ package ~min:"0.5.4" ~sublibs:["lwt"] "nocrypto" ]
       | `Esp32 ->
-        [  ]
+        [ package "nocrypto" ]
       
 
     method! build _ = R.ok (enable_entropy ())
