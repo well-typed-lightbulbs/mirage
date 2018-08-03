@@ -242,7 +242,7 @@ let nocrypto = impl @@ object
       | `Unix | `MacOSX ->
         [ package ~min:"0.5.4" ~sublibs:["lwt"] "nocrypto" ]
       | `Esp32 ->
-        [ package "nocrypto" ]
+        [ package ~sublibs:["mirage"] "nocrypto" ]
       
 
     method! build _ = R.ok (enable_entropy ())
@@ -1828,6 +1828,8 @@ let configure_idf_directory () =
                       return -1;\n\
                   }\n\
 \n\
+                  __uint64_t __bswap64(__uint64_t _x){return (__builtin_bswap64(_x));}\n\
+\n\
                   void app_main()\n\
                   {\n\
                       caml_main(argv);\n\
@@ -1991,7 +1993,7 @@ let compile libs warn_error target =
     | _ -> ""
   in
   let concat = String.concat ~sep:"," in
-  let cmd = Bos.Cmd.(v "env" % "OCAMLPARAM=use-lto=1,_" % "ocamlbuild" % "-use-ocamlfind" %
+  let cmd = Bos.Cmd.(v "ocamlbuild" % "-use-ocamlfind" %
                      "-toolchain" % cross_toolchain %
                      "-classic-display" %
                      "-tags" % concat tags %
